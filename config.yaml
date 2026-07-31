@@ -1,0 +1,22 @@
+app:
+  name: "NetOps Commander"
+  version: "1.0.0"
+  theme: "dark"               # dark | light
+  scan_timeout: 2.0           # seconds per host (ping)
+  scan_concurrency: 128       # parallel hosts per scan wave
+  tcp_connect_timeout: 1.0    # seconds per TCP connect attempt
+  port_scan_concurrency: 64
+  port_scan_timeout: 0.8
+  port_scan_ports: "21,22,23,25,53,80,110,135,139,143,443,445,993,995,1433,3306,3389,5432,5900,8080,8443"
+  monitoring_interval: 60     # default seconds between monitor passes
+  monitor_max_devices: 25
+  history_retention_days: 30
+  public_ip_endpoints:
+    - "https://api.ipify.org"
+    - "https://ifconfig.me/ip"
+    - "https://icanhazip.com"
+  vendor_cache_enabled: true
+  log_level: "INFO"
+  log_max_bytes: 5242880      # 5 MB
+  log_backup_count: 3
+  database_path: "netops_commander.db"
