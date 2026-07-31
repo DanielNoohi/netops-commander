@@ -36,7 +36,7 @@ def main():
     """Application entry point."""
     app = QApplication(sys.argv)
     app.setApplicationName("NetOps Commander")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion("1.1.0")
     app.setWindowIcon(QIcon(":/icons/app.png"))  # Placeholder
 
     # Initialize database

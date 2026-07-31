@@ -2,7 +2,15 @@
 
 A professional, cross-platform desktop application for network administration,
 inventory, monitoring, and diagnostics. Built with Python 3.11+, PySide6,
-SQLAlchemy, and modern async patterns to keep the GUI responsive.
+SQLAlchemy, and modern async I/O. **Authorized use only.**
+
+## Version 1.1.0 (Current)
+
+**Major improvements in discovery and enrichment:**
+- **Strict device discovery** — only hosts that actively respond to ICMP ping or TCP connect are reported as online. Eliminates false positives from stale ARP entries.
+- **Vendor enrichment** — 120+ MAC OUI prefixes mapped to vendors (Apple, Dell, Ubiquiti, VMware, Raspberry Pi, Cisco, HP, Lenovo, Intel, etc.)
+- **Smart device type classification** — infers device role from hostname, open ports, and vendor: Router, Switch, Access Point, Computer, Mobile, Virtual Machine, NAS, Smart Home, IoT, Printer, Camera, etc.
+- **DB persistence fix** — offline devices are no longer persisted, keeping inventory clean.
 
 ---
 
@@ -100,7 +108,7 @@ provides defaults applied on first run:
 ```yaml
 app:
   name: NetOps Commander
-  version: 1.0.0
+  version: 1.1.0
   theme: dark
   scan_timeout: 2.0
   scan_concurrency: 128
@@ -176,6 +184,17 @@ Authorized network administration use only. The operator is responsible for
 ensuring they have permission to scan any network they use this tool on.
 
 ## Changelog
+
+### 1.1.0 — Strict Discovery & Enrichment Release
+- **Strict device discovery** — only hosts that actively respond to ICMP ping or TCP connect are reported as online. Eliminates false positives from stale ARP entries.
+- **Vendor enrichment** — 120+ MAC OUI prefixes mapped to vendors (Apple, Dell, Ubiquiti, VMware, Raspberry Pi, Cisco, HP, Lenovo, Intel, Microsoft, Samsung, Sony, Huawei, Xiaomi, Synology, QNAP, Philips Hue, LIFX, Google, Amazon, Roku, Mikrotik, etc.).
+- **Smart device type classification** — infers device role from hostname, open ports, and vendor: Router, Switch, Access Point, Computer, Mobile, Virtual Machine, NAS, Smart Home, IoT, Printer, Camera, Web Server, SSH Server, etc.
+- **DB persistence fix** — offline devices are no longer persisted; returns bool to indicate whether a device was saved.
+- **Logger import paths corrected** — modules now use `..utils.logger` correctly.
+- **psutil 7.x compatibility** — `net_if_gateways()` wrapped in try/except.
+- **sys.executable** — `platform.executable` deprecated in 3.11+, replaced with `sys.executable`.
+- **QAction import** — moved to `QtGui` per PySide6 6.11+ convention.
+- **README updated** — Version section, this changelog.
 
 ### 1.0.0 — Initial release
 - Full device discovery, inventory, tools suite, monitoring, alerts, exports
