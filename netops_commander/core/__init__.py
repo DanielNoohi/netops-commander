@@ -1,0 +1,1 @@
+"""Core package - scanner, discovery, workers, monitoring, alerts."""
