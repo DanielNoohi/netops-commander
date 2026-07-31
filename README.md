@@ -74,7 +74,7 @@ SQLAlchemy, and modern async patterns to keep the GUI responsive.
 # 1. Create virtual environment
 python -m venv .venv
 # Windows
-.venv\Scripts\activate
+.venv\Scripts\Activate.ps1
 # Linux/macOS
 source .venv/bin/activate
 
