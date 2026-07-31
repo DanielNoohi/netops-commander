@@ -138,12 +138,16 @@ async def background_scan(
     return scan_mgr
 
 
-def persist_device(device: DiscoveredDevice) -> None:
-    """Persist discovered device to database (thread-safe via session_scope)."""
+def persist_device(device: DiscoveredDevice) -> bool:
+    """
+    Persist discovered device to database.
+    Returns False if device is offline (not persisted).
+    """
+    if not device.online:
+        return False
     with session_scope() as session:
         existing = session.query(DeviceModel).filter_by(ip_address=device.ip_address).first()
         if existing:
-            # Update fields
             existing.hostname = device.hostname
             existing.mac_address = device.mac_address
             existing.vendor = device.vendor
@@ -153,7 +157,6 @@ def persist_device(device: DiscoveredDevice) -> None:
             existing.last_seen = device.last_seen
             existing.updated_at = datetime.now(timezone.utc)
         else:
-            # Create new device
             new_dev = DeviceModel(
                 ip_address=device.ip_address,
                 hostname=device.hostname,
@@ -166,6 +169,7 @@ def persist_device(device: DiscoveredDevice) -> None:
                 last_seen=device.last_seen,
             )
             session.add(new_dev)
+    return True
 
 
 def export_devices_csv(filename: str, devices: List[DiscoveredDevice]) -> None:

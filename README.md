@@ -74,7 +74,7 @@ SQLAlchemy, and modern async patterns to keep the GUI responsive.
 # 1. Create virtual environment
 python -m venv .venv
 # Windows
-.venv\Scripts\Activate.ps1
+.venv\Scripts\activate
 # Linux/macOS
 source .venv/bin/activate
 
@@ -172,10 +172,8 @@ netops_commander/
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0.
-See the [LICENSE](LICENSE) file for details.
-
-Use this application only on networks and systems you own or are explicitly authorized to administer or test.
+Authorized network administration use only. The operator is responsible for
+ensuring they have permission to scan any network they use this tool on.
 
 ## Changelog
 
