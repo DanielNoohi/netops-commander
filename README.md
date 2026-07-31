@@ -93,9 +93,9 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Optional Dependencies (auto-detected, not required)
+### Optional Dependencies (auto‑detected, not required)
 | Dependency | Provides | Install |
-|-----------|----------|---------|
+|-----------|----------|--------|
 | Nmap | Deep port scanning | https://nmap.org/download.html |
 | scapy | ARP discovery (more reliable than netsh) | `pip install scapy` |
 | pysnmp | SNMP device interrogation | `pip install pysnmp` |
@@ -145,37 +145,40 @@ netops_commander/
 ├── requirements.txt
 ├── README.md
 ├── config.yaml
+├── PROJECT_STRUCTURE.md
 ├── netops_commander/
+│   ├── __init__.py
 │   ├── config.py
 │   ├── constants.py
 │   ├── database/
+│   │   ├── __init__.py
 │   │   ├── models.py
 │   │   ├── database.py
 │   │   └── migrations.py
 │   ├── core/
+│   │   ├── __init__.py
 │   │   ├── scanner.py
 │   │   ├── discovery.py
-│   │   ├── workers.py
 │   │   ├── monitoring.py
 │   │   └── alerts.py
 │   ├── gui/
+│   │   ├── __init__.py
 │   │   ├── main_window.py
 │   │   ├── dashboard.py
 │   │   ├── device_table.py
 │   │   ├── device_dialog.py
 │   │   ├── themes.py
-│   │   ├── widgets/...
-│   │   └── tools/...
-│   ├── utils/
-│   │   ├── network.py
-│   │   ├── validators.py
-│   │   ├── export.py
-│   │   ├── logger.py
-│   │   ├── privileges.py
-│   │   ├── dependencies.py
-│   │   └── helpers.py
-│   └── tests/
-└── ...
+│   │   └── tools/
+│   │       ├── __init__.py
+│   │       └── ping_tool.py
+│   └── utils/
+│       ├── __init__.py
+│       ├── network.py
+│       ├── validators.py
+│       ├── export.py
+│       ├── logger.py
+│       ├── privileges.py
+│       └── dependencies.py
 ```
 
 ## License
