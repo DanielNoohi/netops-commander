@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QThread, Signal
 
 from ..database.database import session_scope
 from ..database.models import Device
-from ..core.scanner import background_scan, scan_cidr, persist_device, export_devices_csv, export_devices_json
+from ..core.scanner import background_scan, CancellableScan, persist_device, export_devices_csv, export_devices_json
 from ..utils.export import export_html
 from ..utils.validators import validate_cidr
 from ..utils.network import get_local_subnet
@@ -39,10 +39,18 @@ class ScanThread(QThread):
             def _err(e):
                 self.error.emit(str(e))
 
-            self._mgr = loop.run_until_complete(
-                scan_cidr(self.cidr, progress_callback=lambda ip, count, total: self.progress.emit(ip, count, total))
+            # Use background_scan with new API
+            scan_mgr = CancellableScan()
+            loop.run_until_complete(
+                background_scan(
+                    self.cidr,
+                    scan_mgr=scan_mgr,
+                    done_callback=_done,
+                    error_callback=_err,
+                )
             )
-            _done(self._mgr)
+            # Store mgr for cancellation
+            self._mgr = scan_mgr
         except Exception as e:
             self.error.emit(str(e))
 

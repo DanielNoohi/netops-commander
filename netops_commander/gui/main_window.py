@@ -21,7 +21,7 @@ log = get_logger(__name__)
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("NetOps Commander v1.1.0")
+        self.setWindowTitle("NetOps Commander v1.1.1")
         self.setMinimumSize(1400, 900)
         self._setup_logging()
         self._build_ui()
@@ -123,4 +123,4 @@ class MainWindow(QMainWindow):
         self.status_label.setText(text)
 
     def _show_about(self):
-        QMessageBox.information(self, "About", "NetOps Commander v1.1.0\nProfessional network administration tool.\nAuthorized use only.")
+        QMessageBox.information(self, "About", "NetOps Commander v1.1.1\nProfessional network administration tool.\nAuthorized use only.")

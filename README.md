@@ -4,7 +4,7 @@ A professional, cross-platform desktop application for network administration,
 inventory, monitoring, and diagnostics. Built with Python 3.11+, PySide6,
 SQLAlchemy, and modern async I/O. **Authorized use only.**
 
-## Version 1.1.0 (Current)
+## Version 1.1.1 (Current)
 
 **Major improvements in discovery and enrichment:**
 - **Strict device discovery** — only hosts that actively respond to ICMP ping or TCP connect are reported as online. Eliminates false positives from stale ARP entries.
@@ -108,7 +108,7 @@ provides defaults applied on first run:
 ```yaml
 app:
   name: NetOps Commander
-  version: 1.1.0
+  version: 1.1.1
   theme: dark
   scan_timeout: 2.0
   scan_concurrency: 128
@@ -187,6 +187,14 @@ Authorized network administration use only. The operator is responsible for
 ensuring they have permission to scan any network they use this tool on.
 
 ## Changelog
+
+### 1.1.1 — Scan & Monitoring Bugfix Release
+- **Fixed broken `monitor.add_device()` call** in `scan_cidr` — was passing a single IP string to a method expecting `(device_id, ip)`, which would crash monitoring during scans.
+- **Fixed `background_scan` cancellation** — now accepts an external `CancellableScan` instance so cancellation actually propagates to the running scan.
+- **`persist_device()` enrichment** — new devices now get `first_seen`, `last_check`, `is_monitored=True`, and `monitor_interval` from config; updates preserve existing monitoring state.
+- **`ScanThread.run()` in GUI** — updated to the new `background_scan(cidr, scan_mgr, done_callback, error_callback)` API so the scan button works correctly.
+- **CSV export** — now includes `notes`, `tags`, `first_seen` (was dropping them).
+- **Version bumped** to 1.1.1 across all files (init, constants, config, main, GUI title/About, README).
 
 ### 1.1.0 — Strict Discovery & Enrichment Release
 - **Strict device discovery** — only hosts that actively respond to ICMP ping or TCP connect are reported as online. Eliminates false positives from stale ARP entries.

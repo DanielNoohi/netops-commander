@@ -1,4 +1,7 @@
-"""Async background workers for network operations."""
+"""
+Async background workers for network operations.
+Provides scan scheduling, device persistence, and export functionality.
+"""
 
 import asyncio
 import csv
@@ -11,8 +14,7 @@ from typing import Callable, Awaitable, Optional, List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
 
 from .discovery import discover_host, DiscoveredDevice
-from .monitoring import MonitorController
-from ..database.database import session_scope, init_database
+from ..database.database import session_scope
 from ..database.models import Device as DeviceModel
 from ..config import get_config
 from ..utils.logger import get_logger
@@ -29,7 +31,7 @@ class CancellableScan:
         self._cancel_event.set()  # No cancellation by default
 
     def cancel(self) -> None:
-        """Signal cancellation."""
+        """Signal cancellation for all running tasks."""
         self._cancel_event.clear()
 
     def can_continue(self) -> bool:
@@ -40,15 +42,13 @@ class CancellableScan:
 async def scan_cidr(
     cidr: str,
     progress_callback: Optional[Callable] = None,
-    monitor: Optional[MonitorController] = None,
 ) -> List[DiscoveredDevice]:
     """
     Scan all IPs in CIDR range.
-    
+
     Args:
         cidr: CIDR notation (e.g., '192.168.1.0/24')
         progress_callback: Callable(ip, count, total) for progress updates
-        monitor: Optional monitor controller to add discovered devices
 
     Returns:
         List of DiscoveredDevice objects
@@ -79,11 +79,7 @@ async def scan_cidr(
                 progress_callback(ip_str, idx, total)
             except Exception:
                 pass
-        if device.online:
-            if monitor:
-                monitor.add_device(device.ip_address)
-            return device
-        return None
+        return device
 
     semaphore = asyncio.Semaphore(concurrency)
 
@@ -104,7 +100,7 @@ async def scan_cidr(
             break
         try:
             result = await coro
-            if result:
+            if result and result.online:
                 devices.append(result)
         except (asyncio.CancelledError, Exception) as e:
             log.debug(f"Scan task error: {e}")
@@ -114,15 +110,19 @@ async def scan_cidr(
 
 async def background_scan(
     cidr: str,
-    state_callback: Callable,
+    scan_mgr: CancellableScan,
     done_callback: Callable,
     error_callback: Callable,
-) -> CancellableScan:
+) -> None:
     """
     Start background scan that updates state via callbacks.
-    Returns CancellableScan instance for cancellation.
+
+    Args:
+        cidr: CIDR notation for scan range
+        scan_mgr: CancellableScan instance to control lifecycle
+        done_callback: Called with (devices_list) on completion
+        error_callback: Called with (exception) on error
     """
-    scan_mgr = CancellableScan()
 
     async def _run():
         try:
@@ -130,32 +130,40 @@ async def background_scan(
             done_callback(devices)
         except Exception as e:
             error_callback(e)
-        finally:
-            # Reset cancel state if completed
-            scan_mgr._cancel_event.set()
 
     asyncio.create_task(_run())
-    return scan_mgr
+    scan_mgr._cancel_event.set()  # Mark as "ready to run" (event set = can continue)
 
 
 def persist_device(device: DiscoveredDevice) -> bool:
     """
     Persist discovered device to database.
     Returns False if device is offline (not persisted).
+
+    Handles both new devices and updates to existing ones.
+    Sets is_monitored=True by default, monitor_interval from config.
     """
     if not device.online:
         return False
+
+    now = datetime.now(timezone.utc)
+    config = get_config()
+    default_monitor_interval = config.get("app.monitor_interval", 60)
+
     with session_scope() as session:
         existing = session.query(DeviceModel).filter_by(ip_address=device.ip_address).first()
         if existing:
-            existing.hostname = device.hostname
+            existing.hostname = device.hostname or existing.hostname
             existing.mac_address = device.mac_address
             existing.vendor = device.vendor
             existing.latency_ms = device.latency_ms
             existing.open_ports = json.dumps(device.open_ports)
             existing.device_type = device.device_type
-            existing.last_seen = device.last_seen
-            existing.updated_at = datetime.now(timezone.utc)
+            existing.online = True
+            existing.last_seen = now
+            existing.last_check = now
+            existing.updated_at = now
+            # Preserve monitoring state if already tracked
         else:
             new_dev = DeviceModel(
                 ip_address=device.ip_address,
@@ -163,10 +171,13 @@ def persist_device(device: DiscoveredDevice) -> bool:
                 mac_address=device.mac_address,
                 vendor=device.vendor,
                 device_type=device.device_type,
-                online=device.online,
+                online=True,
                 latency_ms=device.latency_ms,
                 open_ports=json.dumps(device.open_ports),
-                last_seen=device.last_seen,
+                first_seen=now,
+                last_seen=now,
+                is_monitored=True,
+                monitor_interval=default_monitor_interval,
             )
             session.add(new_dev)
     return True
@@ -184,7 +195,8 @@ def export_devices_csv(filename: str, devices: List[DiscoveredDevice]) -> None:
             writer.writerow([
                 d.ip_address, d.hostname or "", d.mac_address or "", d.vendor or "",
                 d.device_type or "", d.online, d.latency_ms or "", "|".join(map(str, d.open_ports)),
-                "", "", "", d.last_seen.isoformat()
+                d.notes or "", d.tags or "", d.first_seen.isoformat() if d.first_seen else "",
+                d.last_seen.isoformat() if d.last_seen else ""
             ])
 
 
