@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt, QThread, Signal
 from ..database.database import session_scope
 from ..database.models import Device
 from ..core.scanner import background_scan, CancellableScan, persist_device, export_devices_csv, export_devices_json
-from ..utils.export import export_html
+from ..utils.export import export_csv, export_json, export_html
 from ..utils.validators import validate_cidr
 from ..utils.network import get_local_subnet
 from ..utils.logger import get_logger
@@ -152,6 +152,10 @@ class DeviceTableWidget(QWidget):
         valid, msg = validate_cidr(cidr)
         if not valid:
             QMessageBox.warning(self, "Invalid CIDR", msg)
+            return
+        # Guard against concurrent scans (leaks the previous thread)
+        if self._scan_thread and self._scan_thread.isRunning():
+            QMessageBox.information(self, "Scan in progress", "A scan is already running.")
             return
         self._scan_thread = ScanThread(cidr)
         self._scan_thread.progress.connect(self._on_scan_progress)
