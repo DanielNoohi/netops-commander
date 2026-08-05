@@ -12,7 +12,6 @@ log = get_logger(__name__)
 
 def get_active_interface() -> Dict[str, Any]:
     """Return active network interface info."""
-    import psutil
     info = {
         "name": "Unknown", "ip": "127.0.0.1", "netmask": "255.0.0.0",
         "gateway": None, "dns": [], "mac": None, "is_up": False,

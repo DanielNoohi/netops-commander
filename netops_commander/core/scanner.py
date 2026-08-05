@@ -123,16 +123,13 @@ async def background_scan(
         done_callback: Called with (devices_list) on completion
         error_callback: Called with (exception) on error
     """
-
-    async def _run():
-        try:
-            devices = await scan_cidr(cidr)
-            done_callback(devices)
-        except Exception as e:
-            error_callback(e)
-
-    asyncio.create_task(_run())
-    scan_mgr._cancel_event.set()  # Mark as "ready to run" (event set = can continue)
+    try:
+        devices = await scan_cidr(cidr)
+        done_callback(devices)
+    except Exception as e:
+        error_callback(e)
+    finally:
+        scan_mgr._cancel_event.set()
 
 
 def persist_device(device: DiscoveredDevice) -> bool:

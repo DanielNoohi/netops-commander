@@ -4,31 +4,36 @@ from PySide6.QtWidgets import (
     QToolBar, QStatusBar, QMenuBar, QFileDialog, QMessageBox,
     QProgressBar, QLabel
 )
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtCore import Qt, QTimer, QThread, Signal
 
 from ..config import get_config
 from ..database.database import init_database
-from ..utils.logger import get_logger, setup_logging
+from ..utils.logger import get_logger
 from ..utils.privileges import is_admin, privilege_guidance
 from ..utils.dependencies import get_optional_dependencies
+from .. import __version__
 from .dashboard import DashboardWidget
 from .device_table import DeviceTableWidget
 
 log = get_logger(__name__)
 
 
+class DependencyChecker(QThread):
+    """Check optional dependencies in background to avoid UI freeze."""
+    finished = Signal(dict)
+
+    def run(self):
+        self.finished.emit(get_optional_dependencies())
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("NetOps Commander v1.1.1")
+        self.setWindowTitle(f"NetOps Commander v{__version__}")
         self.setMinimumSize(1400, 900)
-        self._setup_logging()
+        self._deps = {}  # Cache dependency results
         self._build_ui()
         self._start_status_refresh()
-
-    def _setup_logging(self):
-        setup_logging()
 
     def _build_ui(self):
         central = QSplitter(Qt.Orientation.Horizontal)
@@ -51,76 +56,65 @@ class MainWindow(QMainWindow):
         file_menu.addAction(exit_act)
 
         tools_menu = menu.addMenu("Tools")
+        deps_action = QAction("Dependencies", self)
+        deps_action.triggered.connect(self._show_dependencies)
+        tools_menu.addAction(deps_action)
+
         help_menu = menu.addMenu("Help")
         about_act = QAction("About", self)
         about_act.triggered.connect(self._show_about)
         help_menu.addAction(about_act)
 
-        tb = QToolBar()
-        self.addToolBar(tb)
-        scan_act = QAction("Scan", self)
-        scan_act.triggered.connect(self.device_table.start_scan_dialog)
-        tb.addAction(scan_act)
-        mon_act = QAction("Monitor", self)
-        mon_act.triggered.connect(self.device_table.monitor_selected)
-        tb.addAction(mon_act)
-        refresh_act = QAction("Refresh", self)
-        refresh_act.triggered.connect(self.device_table.reload_data)
-        tb.addAction(refresh_act)
-
-        self.status = QStatusBar()
-        self.setStatusBar(self.status)
-        self.status_label = QLabel(privilege_guidance())
-        self.progress = QProgressBar()
-        self.progress.setMaximumWidth(300)
-        self.progress.setRange(0, 100)
-        self.progress.setValue(0)
-        self.progress.setVisible(False)
-        self.status.addWidget(self.status_label, 1)
-        self.status.addWidget(self.progress)
-
-        self._set_theme()
-
-    def _set_theme(self):
-        theme = get_config().get("app.theme", "dark")
-        if theme == "dark":
-            self.setStyleSheet(self._dark_stylesheet())
-        else:
-            self.setStyleSheet(self._light_stylesheet())
-
-    def _dark_stylesheet(self) -> str:
-        return """
-        QMainWindow { background-color: #121212; }
-        QMenuBar, QToolBar { background-color: #1a1a1a; }
-        QTableWidget { background-color: #1a1a1a; gridline-color: #333; }
-        QHeaderView::section { background-color: #333; color: #eee; }
-        QPushButton { background-color: #2563eb; color: white; border-radius: 4px; padding: 4px 8px; }
-        QPushButton:hover { background-color: #1d4ed8; }
-        QLineEdit, QComboBox, QTextEdit { background-color: #444; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 4px; }
-        """
-
-    def _light_stylesheet(self) -> str:
-        return """
-        QMainWindow { background-color: #f3f4f6; }
-        QMenuBar, QToolBar { background-color: #e5e7eb; }
-        QTableWidget { background-color: #fff; gridline-color: #d1d5db; }
-        QHeaderView::section { background-color: #e5e7eb; color: #111; }
-        QPushButton { background-color: #2563eb; color: white; border-radius: 4px; padding: 4px 8px; }
-        QPushButton:hover { background-color: #1d4ed8; }
-        QLineEdit, QComboBox, QTextEdit { background-color: #fff; color: #111; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px; }
-        """
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.lbl_priv = QLabel()
+        self.lbl_deps = QLabel()
+        self.status_bar.addWidget(self.lbl_priv)
+        self.status_bar.addPermanentWidget(self.lbl_deps)
 
     def _start_status_refresh(self):
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._update_status)
-        self.timer.start(5000)
-        self._update_status()
+        """Start periodic status refresh (deps cached, runs in background)."""
+        self._refresh_status()
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._refresh_status)
+        self._timer.start(30_000)  # Every 30s instead of 5s
 
-    def _update_status(self):
-        deps = get_optional_dependencies()
-        admin = is_admin()
-        text = f"Admin: {'Yes' if admin else 'No'} | nmap: {'OK' if deps['nmap'] else 'N/A'} | scapy: {'OK' if deps['scapy'] else 'N/A'} | SNMP: {'OK' if deps['pysnmp'] else 'N/A'}"
-        self.status_label.setText(text)
+    def _refresh_status(self):
+        """Refresh status bar — deps checked in background thread."""
+        # Privilege check (fast, no subprocess)
+        if is_admin():
+            self.lbl_priv.setText("✓ Running as Administrator")
+        else:
+            self.lbl_priv.setText("⚠ Standard user — some features limited")
+
+        # Dependency check (cached after first run, then background refresh)
+        if not self._deps:
+            # First run: check synchronously to populate UI immediately
+            self._deps = get_optional_dependencies()
+            self._update_deps_label()
+        else:
+            # Subsequent runs: check in background
+            checker = DependencyChecker()
+            checker.finished.connect(self._on_deps_checked)
+            checker.start()
+
+    def _on_deps_checked(self, deps):
+        self._deps = deps
+        self._update_deps_label()
+
+    def _update_deps_label(self):
+        count = sum(1 for v in self._deps.values() if v)
+        self.lbl_deps.setText(f"Optional deps: {count}/{len(self._deps)}")
+
+    def _show_dependencies(self):
+        deps = self._deps or get_optional_dependencies()
+        lines = [f"  {'✓' if v else '✗'} {k}" for k, v in deps.items()]
+        QMessageBox.information(self, "Dependencies", "\n".join(lines))
 
     def _show_about(self):
-        QMessageBox.information(self, "About", "NetOps Commander v1.1.1\nProfessional network administration tool.\nAuthorized use only.")
+        QMessageBox.about(
+            self, "About NetOps Commander",
+            f"NetOps Commander v{__version__}\n\n"
+            "Professional network administration tool.\n"
+            "For authorized use only."
+        )

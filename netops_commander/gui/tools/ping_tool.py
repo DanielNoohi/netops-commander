@@ -1,5 +1,4 @@
 """Ping tool UI placeholder."""
-import sys
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QTextEdit
 from ...utils.logger import get_logger
 

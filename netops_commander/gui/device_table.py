@@ -18,14 +18,14 @@ log = get_logger(__name__)
 
 
 class ScanThread(QThread):
+    scan_finished = Signal(list)
+    scan_error = Signal(str)
     progress = Signal(str, int, int)
-    finished = Signal(list)
-    error = Signal(str)
 
     def __init__(self, cidr: str):
         super().__init__()
         self.cidr = cidr
-        self._mgr = None
+        self._mgr = CancellableScan()
 
     def run(self):
         try:
@@ -34,25 +34,22 @@ class ScanThread(QThread):
             asyncio.set_event_loop(loop)
 
             def _done(devices):
-                self.finished.emit(devices)
+                self.scan_finished.emit(devices)
 
             def _err(e):
-                self.error.emit(str(e))
+                self.scan_error.emit(str(e))
 
-            # Use background_scan with new API
-            scan_mgr = CancellableScan()
             loop.run_until_complete(
                 background_scan(
                     self.cidr,
-                    scan_mgr=scan_mgr,
+                    scan_mgr=self._mgr,
                     done_callback=_done,
                     error_callback=_err,
                 )
             )
-            # Store mgr for cancellation
-            self._mgr = scan_mgr
+            loop.close()
         except Exception as e:
-            self.error.emit(str(e))
+            self.scan_error.emit(str(e))
 
     def cancel(self):
         if self._mgr:
@@ -158,8 +155,8 @@ class DeviceTableWidget(QWidget):
             return
         self._scan_thread = ScanThread(cidr)
         self._scan_thread.progress.connect(self._on_scan_progress)
-        self._scan_thread.finished.connect(self._scan_done)
-        self._scan_thread.error.connect(self._scan_error)
+        self._scan_thread.scan_finished.connect(self._scan_done)
+        self._scan_thread.scan_error.connect(self._scan_error)
         self.btn_scan.setEnabled(False)
         self.btn_cancel.setEnabled(True)
         self.progress.setVisible(True)
