@@ -42,6 +42,7 @@ class CancellableScan:
 async def scan_cidr(
     cidr: str,
     progress_callback: Optional[Callable] = None,
+    scan_mgr: Optional[CancellableScan] = None,
 ) -> List[DiscoveredDevice]:
     """
     Scan all IPs in CIDR range.
@@ -49,6 +50,7 @@ async def scan_cidr(
     Args:
         cidr: CIDR notation (e.g., '192.168.1.0/24')
         progress_callback: Callable(ip, count, total) for progress updates
+        scan_mgr: Optional CancellableScan for cancellation support
 
     Returns:
         List of DiscoveredDevice objects
@@ -61,7 +63,8 @@ async def scan_cidr(
         log.error(f"Invalid CIDR '{cidr}': {e}")
         return []
 
-    scan_mgr = CancellableScan()
+    if scan_mgr is None:
+        scan_mgr = CancellableScan()
     config = get_config()
     concurrency = config.get("app.scan_concurrency", 128)
     timeout = config.get("app.scan_timeout", 2.0)
@@ -92,18 +95,13 @@ async def scan_cidr(
         for i, ip in enumerate(hosts)
     ]
 
-    for coro in asyncio.as_completed(tasks, timeout=None):
-        if not scan_mgr.can_continue():
-            for t in tasks:
-                if not t.done():
-                    t.cancel()
-            break
-        try:
-            result = await coro
-            if result and result.online:
-                devices.append(result)
-        except (asyncio.CancelledError, Exception) as e:
-            log.debug(f"Scan task error: {e}")
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for result in results:
+        if isinstance(result, Exception):
+            log.debug(f"Scan task error: {result}")
+            continue
+        if result and result.online:
+            devices.append(result)
 
     return devices
 
@@ -124,7 +122,7 @@ async def background_scan(
         error_callback: Called with (exception) on error
     """
     try:
-        devices = await scan_cidr(cidr)
+        devices = await scan_cidr(cidr, scan_mgr=scan_mgr)
         done_callback(devices)
     except Exception as e:
         error_callback(e)
