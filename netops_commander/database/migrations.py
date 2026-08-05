@@ -31,6 +31,7 @@ def run_migrations() -> None:
 
 def get_schema_version() -> int:
     """Get current schema version from settings table."""
+    engine = get_engine()
     with engine.connect() as conn:
         result = conn.execute(text("SELECT value FROM settings WHERE key='schema_version'"))
         row = result.fetchone()
@@ -41,6 +42,7 @@ def get_schema_version() -> int:
 
 def set_schema_version(version: int) -> None:
     """Set schema version in settings table."""
+    engine = get_engine()
     with engine.connect() as conn:
         conn.execute(
             text("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', :v)"),
