@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # NOTE: PySide6 is intentionally NOT installed. It needs a display server
+      # to actually run, and the scan-pipeline test mocks the discovery module,
+      # so only the non-GUI deps are required. pyflakes is added for the lint step.
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "SQLAlchemy>=2.0.0" "PyYAML>=6.0.1" "psutil>=5.9.0" "pyflakes>=3.2.0"
+
+      - name: Compile all Python files (py_compile)
+        run: |
+          find . -name "*.py" -not -path "./.git/*" -print0 | xargs -0 -n1 python -m py_compile
+          echo "Compiled $(find . -name '*.py' -not -path './.git/*' | wc -l) Python files OK"
+
+      - name: Run scan pipeline test
+        run: python tests/test_scan_pipeline.py
+
+      # Project convention (v1.1.1 bugfix): __version__ in __init__.py must match
+      # APP_VERSION in constants.py so the GUI title bar and app metadata agree.
+      - name: Verify version consistency
+        run: |
+          V1=$(grep -oP '__version__ = "\K[^"]+' netops_commander/__init__.py)
+          V2=$(grep -oP 'APP_VERSION = "\K[^"]+' netops_commander/constants.py)
+          if [ "$V1" != "$V2" ]; then
+            echo "::error::Version mismatch: __init__.py=$V1 constants.py=$V2"
+            exit 1
+          fi
+          echo "Version consistent: $V1"
+
+      # ADVISORY (continue-on-error): the codebase currently has pre-existing
+      # findings - unused imports across several modules and F821 "undefined name
+      # 'engine'" in netops_commander/database/migrations.py. Flip this to a hard
+      # gate once those are cleaned up.
+      - name: pyflakes (unused imports / common issues)
+        continue-on-error: true
+        run: python -m pyflakes main.py netops_commander tests
