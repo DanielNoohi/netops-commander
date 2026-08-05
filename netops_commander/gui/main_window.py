@@ -2,7 +2,7 @@
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QToolBar, QStatusBar, QMenuBar, QFileDialog, QMessageBox,
-    QProgressBar, QLabel
+    QProgressBar, QLabel, QAction
 )
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
 
