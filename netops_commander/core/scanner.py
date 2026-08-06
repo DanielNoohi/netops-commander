@@ -111,6 +111,36 @@ async def scan_cidr(
         if result and result.online:
             devices.append(result)
 
+    # One ARP refresh so late MAC resolutions settle, then drop any ICMP-only
+    # ghosts that still have no L2 identity (defense in depth with require_arp).
+    try:
+        from .discovery import get_arp_table, _is_real_host_mac, _norm_mac
+        from ..utils.network import get_active_interface
+
+        await get_arp_table(force=True)
+        arp = {e["ip"]: _norm_mac(e.get("mac")) for e in await get_arp_table()}
+        local_ip = get_active_interface().get("ip")
+        gateway_ip = get_active_interface().get("gateway")
+        gateway_mac = arp.get(gateway_ip) if gateway_ip else None
+
+        filtered: List[DiscoveredDevice] = []
+        for d in devices:
+            if d.ip_address == local_ip:
+                filtered.append(d)
+                continue
+            mac = _norm_mac(d.mac_address) or arp.get(d.ip_address)
+            if mac and _is_real_host_mac(mac):
+                if gateway_mac and gateway_ip and d.ip_address != gateway_ip and mac == gateway_mac:
+                    log.debug("Dropping proxy-ARP ghost %s", d.ip_address)
+                    continue
+                d.mac_address = mac
+                filtered.append(d)
+                continue
+            log.debug("Dropping unconfirmed host %s (%s)", d.ip_address, d.discovery_method)
+        devices = filtered
+    except Exception as e:
+        log.debug("post-scan ARP filter skipped: %s", e)
+
     log.info("scan_cidr %s finished: %s online / %s probed", cidr, len(devices), total)
     return devices
 

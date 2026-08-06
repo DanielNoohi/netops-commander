@@ -17,10 +17,11 @@ from .constants import (
 DEFAULT_CONFIG: Dict[str, Any] = {
     "app": {
         "name": "NetOps Commander",
-        "version": "1.3.1",
+        "version": "1.3.2",
         "theme": DEFAULT_THEME,
         "scan_timeout": DEFAULT_SCAN_TIMEOUT,
         "scan_concurrency": DEFAULT_SCAN_CONCURRENCY,
+        "require_arp": True,  # require ARP/L2 (or TCP) — reject ghost ICMP
         "tcp_connect_timeout": 1.0,
         "port_scan_concurrency": 64,
         "port_scan_timeout": DEFAULT_PORT_SCAN_TIMEOUT,

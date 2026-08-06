@@ -3,7 +3,7 @@ NetOps Commander - Professional Network Administration Tool
 Authorized use only.
 """
 
-__version__ = "1.3.1"
+__version__ = "1.3.2"
 __app_name__ = "NetOps Commander"
 
 from .constants import (

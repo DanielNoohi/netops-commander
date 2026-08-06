@@ -5,10 +5,16 @@ Built with Python 3.11+, PySide6, SQLAlchemy, and async I/O.
 **Authorized use only** — never scan networks you do not own or have
 written permission to test.
 
-## Version 1.3.1 (Current)
+## Version 1.3.2 (Current)
 
-- **Scan fix**: reverse-DNS / NetBIOS timeouts no longer discard online hosts
-  (scans were completing with 0 devices). Enrichment is best-effort only.
+- **Ghost-host filter**: require a real ARP MAC (not gateway proxy-ARP) before
+  marking a host online. Stops `/24` scans reporting 254 fake “online” devices
+  when the LAN answers ICMP/TCP for empty addresses.
+- Config: `app.require_arp: true` (default).
+
+## Version 1.3.1
+
+- **Scan fix**: reverse-DNS / NetBIOS timeouts no longer discard online hosts.
 - Stricter ICMP reply matching; modest Windows scan concurrency; ARP cache reuse.
 
 ## Version 1.3.0
@@ -106,6 +112,12 @@ Defaults in `config.yaml` (auto-created). Theme and other keys are updated via
 See `PROJECT_STRUCTURE.md`.
 
 ## Changelog
+
+### 1.3.2 — Reject ghost ICMP/TCP hosts
+- Online requires ARP/L2 confirmation (or local IP); proxy-ARP and “all ports
+  open” sinkholes are dropped
+- `require_arp` config flag (default true)
+- Version 1.3.1 → 1.3.2
 
 ### 1.3.1 — Scan finds devices again
 - Hostname enrichment timeouts no longer abort `discover_host` after a successful ping

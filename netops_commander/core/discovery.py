@@ -401,23 +401,62 @@ def guess_device_type(mac: Optional[str], hostname: Optional[str], open_ports: L
     return "Unknown"
 
 
+def _norm_mac(mac: Optional[str]) -> Optional[str]:
+    if not mac:
+        return None
+    return mac.replace("-", ":").upper()
+
+
+def _is_real_host_mac(mac: Optional[str]) -> bool:
+    """Reject empty / broadcast / multicast placeholder MACs."""
+    m = _norm_mac(mac)
+    if not m:
+        return False
+    if m in ("00:00:00:00:00:00", "FF:FF:FF:FF:FF:FF"):
+        return False
+    # First octet multicast bit
+    try:
+        first = int(m.split(":")[0], 16)
+        if first & 0x01:
+            return False
+    except ValueError:
+        return False
+    return True
+
+
+async def _lookup_mac_after_ping(ip: str) -> Optional[str]:
+    """Read ARP MAC for IP (cache reused across the scan wave)."""
+    mac = await get_mac_via_arp_lookup(ip, ping_first=False)
+    return _norm_mac(mac)
+
+
 async def _enrich_host(device: DiscoveredDevice) -> None:
     """Best-effort hostname/MAC/vendor enrichment. Must never raise."""
     ip = device.ip_address
     try:
-        hostname_dns, hostname_smb, mac = await asyncio.gather(
+        tasks = [
             reverse_dns_lookup(ip, timeout=0.8),
             get_hostname_smb(ip, timeout=0.6),
-            get_mac_via_arp_lookup(ip, ping_first=False),
-            return_exceptions=True,
-        )
+        ]
+        # Only ARP-lookup when we do not already have a MAC
+        if not device.mac_address:
+            tasks.append(get_mac_via_arp_lookup(ip, ping_first=False))
+            hostname_dns, hostname_smb, mac = await asyncio.gather(
+                *tasks, return_exceptions=True
+            )
+        else:
+            hostname_dns, hostname_smb = await asyncio.gather(
+                *tasks, return_exceptions=True
+            )
+            mac = device.mac_address
+
         if isinstance(hostname_smb, str) and hostname_smb:
             device.hostname = hostname_smb
         elif isinstance(hostname_dns, str) and hostname_dns:
             device.hostname = hostname_dns
-        if isinstance(mac, str) and mac:
-            device.mac_address = mac
-            device.vendor = lookup_vendor(mac)
+        if isinstance(mac, str) and _is_real_host_mac(mac):
+            device.mac_address = _norm_mac(mac)
+            device.vendor = lookup_vendor(device.mac_address)
         device.device_type = guess_device_type(
             device.mac_address, device.hostname, device.open_ports
         )
@@ -427,28 +466,82 @@ async def _enrich_host(device: DiscoveredDevice) -> None:
 
 async def discover_host(ip: str, ping_timeout: float = 2.0) -> DiscoveredDevice:
     """
-    Discover a single host using multi-method approach with strict online criteria.
+    Discover a single host with strict online criteria.
 
-    Strategy:
-    1. ICMP ping - if responds, host is definitely online
-    2. TCP fallback - if ping blocked but common ports open, host is online
+    On many LANs (including some Windows / gateway setups), ICMP echo replies
+    arrive for every address in the subnet even when no host exists. Those
+    "ghost" replies leave no ARP entry. We therefore require L2 confirmation:
 
-    Only returns online=True if we have CONFIRMED evidence the host is alive NOW.
-    Enrichment (DNS/NetBIOS/MAC) failures must never discard an online host.
+    online = (local IP) OR (ping + real ARP MAC, not gateway proxy-ARP)
+             OR (TCP ports + real ARP MAC, not an all-ports sinkhole)
+
+    Enrichment failures never discard a confirmed online host.
     """
+    from ..utils.network import get_active_interface
+    from ..config import get_config
+
     device = DiscoveredDevice(ip_address=ip)
+    require_arp = bool(get_config().get("app.require_arp", True))
 
-    # METHOD 1: ICMP Ping (primary - requires actual reply)
-    ping_ok, latency = await async_ping(ip, timeout=ping_timeout)
+    iface = get_active_interface()
+    local_ip = iface.get("ip")
+    local_mac = _norm_mac(iface.get("mac"))
+    gateway_ip = iface.get("gateway")
 
-    if ping_ok:
+    # Always accept our own address
+    if local_ip and ip == local_ip:
         device.online = True
-        device.latency_ms = latency
-        device.discovery_method = "icmp"
+        device.latency_ms = 0.0
+        device.discovery_method = "local"
+        device.mac_address = local_mac
+        device.vendor = lookup_vendor(local_mac)
+        device.device_type = guess_device_type(local_mac, device.hostname, [])
         await _enrich_host(device)
         return device
 
-    # METHOD 2: TCP fallback - check some common ports
+    ping_ok, latency = await async_ping(ip, timeout=ping_timeout)
+    if ping_ok:
+        device.latency_ms = latency
+
+    mac: Optional[str] = None
+    if ping_ok:
+        # Tiny settle so the OS can populate ARP after the echo reply
+        await asyncio.sleep(0.02)
+        mac = await _lookup_mac_after_ping(ip)
+
+    gateway_mac: Optional[str] = None
+    if gateway_ip:
+        gateway_mac = await get_mac_via_arp_lookup(gateway_ip, ping_first=False)
+        gateway_mac = _norm_mac(gateway_mac)
+
+    proxy_arp = bool(
+        mac
+        and gateway_ip
+        and ip != gateway_ip
+        and gateway_mac
+        and mac == gateway_mac
+    )
+
+    confirmed_l2 = _is_real_host_mac(mac) and not proxy_arp
+    if ping_ok and (confirmed_l2 or not require_arp):
+        device.online = True
+        device.mac_address = mac if confirmed_l2 else mac
+        device.discovery_method = "icmp+arp" if confirmed_l2 else "icmp"
+        device.vendor = lookup_vendor(device.mac_address)
+        await _enrich_host(device)
+        return device
+
+    # Ghost ICMP (reply with no ARP / proxy-ARP): do NOT try TCP — on this
+    # class of network every TCP port also appears open for empty addresses.
+    if ping_ok and require_arp and not confirmed_l2:
+        device.extras["ghost_icmp"] = True
+        if proxy_arp:
+            device.extras["proxy_arp"] = True
+        device.discovery_method = "none"
+        device.online = False
+        return device
+
+    # TCP fallback only when ICMP failed (host may block ping)
     common_ports = [22, 53, 80, 443, 445, 3389, 8080, 8443]
     tcp_results = await asyncio.gather(
         *[async_tcp_connect(ip, port, timeout=0.5) for port in common_ports],
@@ -459,11 +552,30 @@ async def discover_host(ip: str, ping_timeout: float = 2.0) -> DiscoveredDevice:
     ]
 
     if open_ports:
+        await asyncio.sleep(0.02)
+        mac = await _lookup_mac_after_ping(ip)
+        proxy_arp = bool(
+            mac
+            and gateway_ip
+            and ip != gateway_ip
+            and gateway_mac
+            and mac == gateway_mac
+        )
+        # Reject "all ports open" sinkholes with no L2 identity
+        suspicious = len(open_ports) >= 6
+        if require_arp and (not _is_real_host_mac(mac) or proxy_arp or suspicious):
+            device.extras["ghost_tcp"] = True
+            device.discovery_method = "none"
+            device.online = False
+            return device
         device.online = True
         device.open_ports = open_ports
         device.discovery_method = "tcp_fallback"
+        device.mac_address = mac
+        device.vendor = lookup_vendor(mac)
         await _enrich_host(device)
         return device
 
     device.discovery_method = "none"
+    device.online = False
     return device
