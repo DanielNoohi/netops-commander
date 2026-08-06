@@ -54,6 +54,9 @@ async def scan_cidr(
     try:
         network = ipaddress.ip_network(cidr, strict=False)
         hosts = list(network.hosts())
+        # /31 and /32 have empty .hosts(); still probe the address(es)
+        if not hosts:
+            hosts = list(network)
         total = len(hosts)
     except ValueError as e:
         log.error(f"Invalid CIDR '{cidr}': {e}")
@@ -62,17 +65,26 @@ async def scan_cidr(
     if scan_mgr is None:
         scan_mgr = CancellableScan()
     config = get_config()
-    concurrency = config.get("app.scan_concurrency", 128)
-    timeout = config.get("app.scan_timeout", 2.0)
+    # Windows Proactor cannot sustain huge concurrent ping subprocesses
+    import platform
+    default_conc = 32 if platform.system().lower() == "windows" else 128
+    concurrency = int(config.get("app.scan_concurrency", default_conc))
+    if platform.system().lower() == "windows":
+        concurrency = min(concurrency, 48)
+    timeout = float(config.get("app.scan_timeout", 2.0))
     devices: List[DiscoveredDevice] = []
 
     async def process_host(ip_str: str, idx: int):
         if not scan_mgr.can_continue():
             return None
-        device = await discover_host(
-            ip_str,
-            ping_timeout=timeout,
-        )
+        try:
+            device = await discover_host(
+                ip_str,
+                ping_timeout=timeout,
+            )
+        except Exception as e:
+            log.debug("discover_host failed for %s: %s", ip_str, e)
+            return None
         if progress_callback:
             try:
                 progress_callback(ip_str, idx, total)
@@ -99,6 +111,7 @@ async def scan_cidr(
         if result and result.online:
             devices.append(result)
 
+    log.info("scan_cidr %s finished: %s online / %s probed", cidr, len(devices), total)
     return devices
 
 

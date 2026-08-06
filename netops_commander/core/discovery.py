@@ -141,9 +141,29 @@ async def async_ping(host: str, timeout: float = 2.0) -> Tuple[bool, Optional[fl
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout + 2)
         out = stdout.decode("utf-8", errors="ignore")
-        # Must have actual TTL or Reply to be considered online
-        if proc.returncode == 0 or "TTL=" in out or "ttl=" in out:
-            m = re.search(r"time[=<](\d+(?:\.\d+)?)\s*ms", out)
+        out_l = out.lower()
+        # Explicit failure markers (do not trust returncode alone)
+        if any(
+            s in out_l
+            for s in (
+                "destination host unreachable",
+                "destination net unreachable",
+                "request timed out",
+                "general failure",
+                "transmit failed",
+                "100% packet loss",
+                "100% loss",
+            )
+        ):
+            return False, None
+        # Require a real echo reply indicator
+        if "ttl=" in out_l or "reply from" in out_l:
+            m = re.search(r"time[=<](\d+(?:\.\d+)?)\s*ms", out, re.I)
+            latency = float(m.group(1)) if m else None
+            return True, latency
+        # Last resort: success returncode AND no failure text
+        if proc.returncode == 0 and "unreachable" not in out_l and "timed out" not in out_l:
+            m = re.search(r"time[=<](\d+(?:\.\d+)?)\s*ms", out, re.I)
             latency = float(m.group(1)) if m else None
             return True, latency
         return False, None
@@ -169,8 +189,8 @@ async def async_tcp_connect(host: str, port: int, timeout: float = 1.0) -> bool:
         return False
 
 
-async def reverse_dns_lookup(ip: str, timeout: float = 2.0) -> Optional[str]:
-    """Reverse DNS lookup using gethostbyaddr."""
+async def reverse_dns_lookup(ip: str, timeout: float = 1.0) -> Optional[str]:
+    """Reverse DNS lookup using gethostbyaddr. Never raises."""
     def _do():
         try:
             hostname, _, _ = socket.gethostbyaddr(ip)
@@ -178,11 +198,15 @@ async def reverse_dns_lookup(ip: str, timeout: float = 2.0) -> Optional[str]:
         except (socket.herror, socket.gaierror, OSError):
             return None
 
-    return await asyncio.wait_for(asyncio.to_thread(_do), timeout=timeout)
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_do), timeout=timeout)
+    except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as e:
+        log.debug("reverse DNS failed for %s: %s", ip, e)
+        return None
 
 
-async def get_hostname_smb(ip: str, timeout: float = 1.0) -> Optional[str]:
-    """Get hostname via NetBIOS name lookup (Windows only)."""
+async def get_hostname_smb(ip: str, timeout: float = 0.8) -> Optional[str]:
+    """Get hostname via NetBIOS name lookup (Windows only). Never raises."""
     if platform.system().lower() != "windows":
         return None
     try:
@@ -190,7 +214,14 @@ async def get_hostname_smb(ip: str, timeout: float = 1.0) -> Optional[str]:
             "nbtstat", "-A", ip,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return None
         out = stdout.decode("utf-8", errors="ignore")
         m = re.search(r"^\s+(\S+)\s+<00>\s+UNIQUE", out, re.MULTILINE)
         if m:
@@ -223,12 +254,25 @@ def lookup_vendor(mac: Optional[str]) -> Optional[str]:
     return None
 
 
-async def get_arp_table() -> List[Dict[str, str]]:
+_ARP_CACHE: List[Dict[str, str]] = []
+_ARP_CACHE_TS: float = 0.0
+_ARP_CACHE_TTL = 3.0  # seconds — reuse during a scan wave
+
+
+async def get_arp_table(force: bool = False) -> List[Dict[str, str]]:
     """
     Read system ARP table. Returns list of {ip, mac, type}.
     Focuses ONLY on dynamic/reachable entries.
+    Cached briefly so per-host enrichment does not re-run `arp -a` hundreds of times.
     """
-    entries = []
+    import time
+
+    global _ARP_CACHE, _ARP_CACHE_TS
+    now = time.monotonic()
+    if not force and _ARP_CACHE and (now - _ARP_CACHE_TS) < _ARP_CACHE_TTL:
+        return _ARP_CACHE
+
+    entries: List[Dict[str, str]] = []
     try:
         if platform.system().lower() == "windows":
             proc = await asyncio.create_subprocess_exec(
@@ -273,22 +317,26 @@ async def get_arp_table() -> List[Dict[str, str]]:
                     })
     except Exception as e:
         log.debug(f"ARP table read failed: {e}")
+    _ARP_CACHE = entries
+    _ARP_CACHE_TS = time.monotonic()
     return entries
 
 
-async def get_mac_via_arp_lookup(ip: str) -> Optional[str]:
+async def get_mac_via_arp_lookup(ip: str, *, ping_first: bool = False) -> Optional[str]:
     """
-    Get MAC for a specific IP via ARP (cached entry).
-    After pinging the host, the ARP cache should have it (if reachable).
+    Get MAC for a specific IP via ARP cache.
+    Set ping_first=True only when the cache may be cold; scanners that already
+    pinged should pass False to avoid a second subprocess per host.
     """
-    # First ping to populate ARP cache (background)
-    await async_ping(ip, timeout=1.0)
+    if ping_first:
+        await async_ping(ip, timeout=1.0)
 
-    # Now read ARP table
     entries = await get_arp_table()
     for entry in entries:
         if entry["ip"] == ip and entry["mac"]:
-            return entry["mac"]
+            mac = entry["mac"].replace("-", ":").upper()
+            if mac and mac != "00:00:00:00:00:00" and not mac.startswith("FF:"):
+                return mac
     return None
 
 
@@ -353,65 +401,69 @@ def guess_device_type(mac: Optional[str], hostname: Optional[str], open_ports: L
     return "Unknown"
 
 
+async def _enrich_host(device: DiscoveredDevice) -> None:
+    """Best-effort hostname/MAC/vendor enrichment. Must never raise."""
+    ip = device.ip_address
+    try:
+        hostname_dns, hostname_smb, mac = await asyncio.gather(
+            reverse_dns_lookup(ip, timeout=0.8),
+            get_hostname_smb(ip, timeout=0.6),
+            get_mac_via_arp_lookup(ip, ping_first=False),
+            return_exceptions=True,
+        )
+        if isinstance(hostname_smb, str) and hostname_smb:
+            device.hostname = hostname_smb
+        elif isinstance(hostname_dns, str) and hostname_dns:
+            device.hostname = hostname_dns
+        if isinstance(mac, str) and mac:
+            device.mac_address = mac
+            device.vendor = lookup_vendor(mac)
+        device.device_type = guess_device_type(
+            device.mac_address, device.hostname, device.open_ports
+        )
+    except Exception as e:
+        log.debug("enrichment failed for %s: %s", ip, e)
+
+
 async def discover_host(ip: str, ping_timeout: float = 2.0) -> DiscoveredDevice:
     """
     Discover a single host using multi-method approach with strict online criteria.
-    
+
     Strategy:
     1. ICMP ping - if responds, host is definitely online
     2. TCP fallback - if ping blocked but common ports open, host is online
-    3. ARP cache - check from existing table only (does NOT mean online now)
-    
+
     Only returns online=True if we have CONFIRMED evidence the host is alive NOW.
+    Enrichment (DNS/NetBIOS/MAC) failures must never discard an online host.
     """
     device = DiscoveredDevice(ip_address=ip)
 
     # METHOD 1: ICMP Ping (primary - requires actual reply)
     ping_ok, latency = await async_ping(ip, timeout=ping_timeout)
-    
+
     if ping_ok:
         device.online = True
         device.latency_ms = latency
         device.discovery_method = "icmp"
-        
-        # Enrich with hostname, MAC, etc.
-        hostname_task = asyncio.create_task(reverse_dns_lookup(ip))
-        smb_task = asyncio.create_task(get_hostname_smb(ip))
-        
-        hostname_dns = await hostname_task
-        hostname_smb = await smb_task
-        device.hostname = hostname_smb or hostname_dns or None
-        
-        # Get MAC from ARP cache (should be populated by the ping)
-        device.mac_address = await get_mac_via_arp_lookup(ip)
-        device.vendor = lookup_vendor(device.mac_address)
-        device.device_type = guess_device_type(device.mac_address, device.hostname, device.open_ports)
-        
+        await _enrich_host(device)
         return device
 
     # METHOD 2: TCP fallback - check some common ports
-    # If any of these respond, host is alive but blocking ping
-    common_ports = [22, 25, 53, 80, 110, 143, 443, 993, 995, 3389, 8080, 8443]
-    tcp_tasks = [async_tcp_connect(ip, port, timeout=0.8) for port in common_ports[:10]]
-    tcp_results = await asyncio.gather(*tcp_tasks, return_exceptions=True)
-    
-    open_ports = [port for port, result in zip(common_ports, tcp_results) if result is True]
-    
+    common_ports = [22, 53, 80, 443, 445, 3389, 8080, 8443]
+    tcp_results = await asyncio.gather(
+        *[async_tcp_connect(ip, port, timeout=0.5) for port in common_ports],
+        return_exceptions=True,
+    )
+    open_ports = [
+        port for port, result in zip(common_ports, tcp_results) if result is True
+    ]
+
     if open_ports:
         device.online = True
         device.open_ports = open_ports
         device.discovery_method = "tcp_fallback"
-        
-        hostname = await reverse_dns_lookup(ip)
-        device.hostname = hostname
-        
-        device.mac_address = await get_mac_via_arp_lookup(ip)
-        device.vendor = lookup_vendor(device.mac_address)
-        device.device_type = guess_device_type(device.mac_address, device.hostname, open_ports)
-        
+        await _enrich_host(device)
         return device
 
-    # Host does not respond to ICMP or TCP - report as offline
-    # Still try to get ARP table info for display purposes
-    device.discovery_method = "arp"
+    device.discovery_method = "none"
     return device

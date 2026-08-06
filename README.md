@@ -5,13 +5,18 @@ Built with Python 3.11+, PySide6, SQLAlchemy, and async I/O.
 **Authorized use only** — never scan networks you do not own or have
 written permission to test.
 
-## Version 1.3.0 (Current)
+## Version 1.3.1 (Current)
+
+- **Scan fix**: reverse-DNS / NetBIOS timeouts no longer discard online hosts
+  (scans were completing with 0 devices). Enrichment is best-effort only.
+- Stricter ICMP reply matching; modest Windows scan concurrency; ARP cache reuse.
+
+## Version 1.3.0
 
 - Full **Tools suite**: Ping, DNS, Traceroute, Subnet Calculator, TLS check,
   Wake-on-LAN, Route/ARP viewers — toolbar + Tools menu + device context menu
 - Packaging: `pyproject.toml`, `python -m netops_commander`, `netops-commander` script
 - Broader unit tests (validators, subnet, WOL, config, ports, monitor stop)
-- Continues 1.2.x correctness: clean monitor stop, theme persistence, ScanHistory
 
 ## Features
 
@@ -101,6 +106,12 @@ Defaults in `config.yaml` (auto-created). Theme and other keys are updated via
 See `PROJECT_STRUCTURE.md`.
 
 ## Changelog
+
+### 1.3.1 — Scan finds devices again
+- Hostname enrichment timeouts no longer abort `discover_host` after a successful ping
+- Ping success requires a real reply marker; Windows concurrency capped
+- Brief ARP table cache during scan waves
+- Version 1.3.0 → 1.3.1
 
 ### 1.3.0 — Tools suite & packaging
 - Added DNS, Traceroute, Subnet Calculator, TLS check, WOL, Route/ARP tools
