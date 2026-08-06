@@ -95,3 +95,12 @@ def vacuum_database() -> None:
     with engine.connect() as conn:
         conn = conn.execution_options(isolation_level="AUTOCOMMIT")
         conn.execute(text("VACUUM"))
+
+
+def reset_engine() -> None:
+    """Dispose and clear the global engine (for tests / config path changes)."""
+    global _engine, _session_factory
+    if _engine is not None:
+        _engine.dispose()
+    _engine = None
+    _session_factory = None

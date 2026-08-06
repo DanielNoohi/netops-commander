@@ -52,6 +52,9 @@ jobs:
           python tests/test_validators.py
           python tests/test_subnet.py
           python tests/test_wol.py
+          python tests/test_export.py
+          python tests/test_discovery_arp.py
+          python tests/test_inventory.py
 
       # __version__ in __init__.py must match APP_VERSION in constants.py.
       - name: Verify version consistency

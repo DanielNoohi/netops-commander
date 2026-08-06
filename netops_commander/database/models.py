@@ -1,6 +1,7 @@
 """
 SQLAlchemy models for NetOps Commander.
-Tables: devices, scan_history, monitor_results, alerts, settings, notes, notes_tags
+Tables: devices, scan_history, monitor_results, alerts, settings.
+Notes and tags are columns on devices (not separate tables).
 """
 
 from datetime import datetime, timezone

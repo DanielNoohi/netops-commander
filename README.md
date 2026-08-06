@@ -5,7 +5,15 @@ Built with Python 3.11+, PySide6, SQLAlchemy, and async I/O.
 **Authorized use only** — never scan networks you do not own or have
 written permission to test.
 
-## Version 1.3.3 (Current)
+## Version 1.3.4 (Current)
+
+- **Settings** dialog (File → Settings): theme, scan timeout/concurrency,
+  `require_arp`, monitor interval/max, history retention
+- History retention purge on startup; delete devices from inventory
+- Alert acknowledge + severity colors; HTML export escapes cell content
+- Unit tests for ARP/ghost rules, inventory reconcile, export escaping
+
+## Version 1.3.3
 
 - **Inventory cleanup**: purge ghost rows (no MAC) on startup; after a scan,
   reconcile the CIDR so the table and dashboard match found hosts only
@@ -41,7 +49,8 @@ written permission to test.
 ### Dashboard
 - Interface / IP / subnet / gateway / DNS / public IP
 - Online/offline/total counts and scan-history count
-- Alerts feed (offline / recovery / high latency)
+- Alerts feed (offline / recovery / high latency) with acknowledge
+- File → Settings for scan / monitor / retention preferences
 
 ### Monitoring
 - Opt-in per-device monitoring with clean start/stop
@@ -118,6 +127,12 @@ Defaults in `config.yaml` (auto-created). Theme and other keys are updated via
 See `PROJECT_STRUCTURE.md`.
 
 ## Changelog
+
+### 1.3.4 — Settings, retention, harden exports/tests
+- File → Settings for key scan/monitor preferences
+- Startup history retention; device delete; alert acknowledge UI
+- HTML export XSS-safe escaping; tests for discovery ARP + inventory
+- Version 1.3.3 → 1.3.4
 
 ### 1.3.3 — Inventory matches scan results
 - Startup purge of ghost ICMP inventory rows (no real MAC)

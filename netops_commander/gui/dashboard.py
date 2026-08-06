@@ -4,8 +4,10 @@ from __future__ import annotations
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView,
+    QPushButton,
 )
-from PySide6.QtCore import QTimer, QThread, Signal
+from PySide6.QtCore import QTimer, QThread, Signal, Qt
+from PySide6.QtGui import QColor
 
 from ..database.database import session_scope
 from ..database.models import Alert
@@ -76,7 +78,17 @@ class DashboardWidget(QWidget):
         self.alerts_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.alerts_table.setMaximumHeight(200)
         self.alerts_table.setAlternatingRowColors(True)
+        self.alerts_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        btn_row = QHBoxLayout()
+        self.btn_ack = QPushButton("Acknowledge selected")
+        self.btn_ack.clicked.connect(self._acknowledge_selected)
+        self.btn_ack_all = QPushButton("Acknowledge all")
+        self.btn_ack_all.clicked.connect(self._acknowledge_all)
+        btn_row.addWidget(self.btn_ack)
+        btn_row.addWidget(self.btn_ack_all)
+        btn_row.addStretch(1)
         layout.addWidget(self.alerts_table)
+        layout.addLayout(btn_row)
         grp.setLayout(layout)
         self.layout().addWidget(grp)
 
@@ -108,33 +120,68 @@ class DashboardWidget(QWidget):
         self.lbl_scans.setText(f"Scans: {scans}")
 
     def reload_alerts(self, limit: int = 20):
-        """Load recent alerts from the database into the table."""
+        """Load recent unacknowledged alerts (then recent ack'd) into the table."""
         try:
             with session_scope() as session:
                 rows = (
                     session.query(Alert)
+                    .filter(Alert.acknowledged.is_(False))
                     .order_by(Alert.timestamp.desc())
                     .limit(limit)
                     .all()
                 )
+                color_map = {
+                    "critical": QColor("#ef4444"),
+                    "warning": QColor("#f59e0b"),
+                    "info": QColor("#22c55e"),
+                }
                 self.alerts_table.setRowCount(len(rows))
                 for i, a in enumerate(rows):
                     ts = a.timestamp.strftime("%Y-%m-%d %H:%M") if a.timestamp else ""
-                    severity = a.severity or "info"
+                    severity = (a.severity or "info").lower()
                     alert_type = a.alert_type or ""
                     message = a.message or ""
-                    self.alerts_table.setItem(i, 0, QTableWidgetItem(ts))
+                    time_item = QTableWidgetItem(ts)
+                    time_item.setData(Qt.ItemDataRole.UserRole, a.id)
+                    self.alerts_table.setItem(i, 0, time_item)
                     sev_item = QTableWidgetItem(severity)
-                    color_map = {"critical": "#ef4444", "warning": "#f59e0b", "info": "#22c55e"}
                     if severity in color_map:
-                        sev_item.setForeground(self.alerts_table.palette().color(
-                            self.foreground().role()
-                        ))
+                        sev_item.setForeground(color_map[severity])
                     self.alerts_table.setItem(i, 1, sev_item)
                     self.alerts_table.setItem(i, 2, QTableWidgetItem(alert_type))
                     self.alerts_table.setItem(i, 3, QTableWidgetItem(message))
         except Exception as e:
             log.debug(f"reload_alerts error: {e}")
+
+    def _selected_alert_ids(self) -> list[int]:
+        ids: list[int] = []
+        for idx in self.alerts_table.selectionModel().selectedRows():
+            item = self.alerts_table.item(idx.row(), 0)
+            if item is None:
+                continue
+            alert_id = item.data(Qt.ItemDataRole.UserRole)
+            if alert_id is not None:
+                ids.append(int(alert_id))
+        return ids
+
+    def _acknowledge_selected(self):
+        ids = self._selected_alert_ids()
+        if not ids:
+            return
+        with session_scope() as session:
+            for alert_id in ids:
+                alert = session.get(Alert, alert_id)
+                if alert:
+                    alert.acknowledged = True
+        self.reload_alerts()
+
+    def _acknowledge_all(self):
+        with session_scope() as session:
+            session.query(Alert).filter(Alert.acknowledged.is_(False)).update(
+                {Alert.acknowledged: True},
+                synchronize_session=False,
+            )
+        self.reload_alerts()
 
     def add_alert_from_db(self):
         """Convenience: reload alerts after a new alert is created."""

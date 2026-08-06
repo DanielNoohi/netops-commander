@@ -1,29 +1,26 @@
 """Constants and enums for NetOps Commander."""
 
 APP_NAME = "NetOps Commander"
-APP_VERSION = "1.3.3"
+APP_VERSION = "1.3.4"
 ORG_NAME = "NetOps"
 ORG_DOMAIN = "netops.local"
 DEFAULT_THEME = "dark"
 
 SUPPORTED_EXPORT_FORMATS = ("csv", "json", "html")
 
+# Alert types currently emitted by MonitorController
 ALERT_TYPES = {
     "offline": "Device Offline",
     "recovery": "Device Recovered",
     "high_latency": "High Latency",
-    "packet_loss": "Packet Loss Detected",
-    "new_device": "New Device Discovered",
-    "ip_change": "IP Address Changed",
-    "mac_change": "MAC Address Changed",
-    "cert_expiry": "Certificate Expiring",
 }
 
 MONITOR_INTERVALS = (30, 60, 120, 300, 600)
 
-SCAN_METHODS = ("ping", "arp", "tcp", "nmap", "snmp", "all")
+# Methods used / recorded by the active discovery path (nmap/snmp planned)
+SCAN_METHODS = ("ping", "arp", "tcp")
 
-DISCOVERY_METHODS = ("icmp", "arp", "tcp_fallback")
+DISCOVERY_METHODS = ("icmp", "icmp+arp", "tcp_fallback", "local", "none")
 
 DEFAULT_PORTS = [
     21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445,

@@ -16,6 +16,7 @@ from ..database.models import Device, ScanHistory
 from ..database.database import session_scope
 from ..core.monitoring import MonitorController
 from ..core.scanner import purge_ghost_devices
+from ..core.maintenance import purge_old_history
 from ..utils.logger import get_logger
 from ..utils.privileges import is_admin
 from ..utils.dependencies import get_optional_dependencies
@@ -23,6 +24,7 @@ from ..utils.network import get_local_subnet
 from .. import __version__
 from .dashboard import DashboardWidget
 from .device_table import DeviceTableWidget
+from .settings_dialog import SettingsDialog
 from .themes import apply_theme
 from .tools import (
     PingToolWidget,
@@ -75,13 +77,17 @@ class MainWindow(QMainWindow):
         self._deps_checker: DependencyChecker | None = None
         self._monitor_ctl = MonitorController()
         self._monitor_thread: MonitorThread | None = None
-        # Drop leftover ghost ICMP rows from older buggy scans
+        # Drop leftover ghost ICMP rows + apply history retention
         try:
             n = purge_ghost_devices()
             if n:
                 log.info("Startup inventory cleanup removed %s ghost devices", n)
         except Exception as e:
             log.debug("ghost purge skipped: %s", e)
+        try:
+            purge_old_history()
+        except Exception as e:
+            log.debug("history retention skipped: %s", e)
         self._build_ui()
         self._start_status_refresh()
         self._start_monitoring()
@@ -124,6 +130,9 @@ class MainWindow(QMainWindow):
             act = QAction(f"Export as {fmt.upper()}", self)
             act.triggered.connect(lambda checked, f=fmt: self.device_table.export_devices(f))
             export_menu.addAction(act)
+        settings_act = QAction("Settings…", self)
+        settings_act.triggered.connect(self._open_settings)
+        file_menu.addAction(settings_act)
         file_menu.addSeparator()
         exit_act = QAction("Exit", self)
         exit_act.triggered.connect(self.close)
@@ -137,6 +146,10 @@ class MainWindow(QMainWindow):
         )
         self._theme_act.triggered.connect(self._toggle_theme)
         view_menu.addAction(self._theme_act)
+        view_menu.addSeparator()
+        refresh_act = QAction("Refresh Dashboard", self)
+        refresh_act.triggered.connect(self._refresh_dashboard)
+        view_menu.addAction(refresh_act)
 
         tools_menu = menu.addMenu("Tools")
         tool_actions = [
@@ -175,6 +188,7 @@ class MainWindow(QMainWindow):
             ("Subnet", self._open_subnet_tool),
             ("TLS", self._open_tls_tool),
             ("WOL", self._open_wol_tool),
+            ("Settings", self._open_settings),
             ("Theme", self._toggle_theme),
         ]
         for label, slot in actions:
@@ -182,7 +196,7 @@ class MainWindow(QMainWindow):
             act.triggered.connect(slot)
             tb.addAction(act)
 
-    # ---- Theme ----
+    # ---- Theme / Settings ----
     def _toggle_theme(self):
         cfg = get_config()
         current = cfg.get("app.theme", "dark")
@@ -193,6 +207,17 @@ class MainWindow(QMainWindow):
             f"Switch to {'Light' if new_theme == 'dark' else 'Dark'} Theme"
         )
         self.lbl_ready.setText(f"Theme → {new_theme}")
+
+    def _open_settings(self):
+        dlg = SettingsDialog(self)
+        if dlg.exec():
+            cfg = get_config()
+            theme = cfg.get("app.theme", "dark")
+            self._theme_act.setText(
+                f"Switch to {'Light' if theme == 'dark' else 'Dark'} Theme"
+            )
+            self.lbl_ready.setText("Settings saved")
+            self._refresh_dashboard()
 
     # ---- Tools ----
     def _toolbar_scan(self):

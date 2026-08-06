@@ -416,6 +416,7 @@ class DeviceTableWidget(QWidget):
         menu = QMenu(self)
         monitor_act = menu.addAction("Toggle Monitoring")
         edit_act = menu.addAction("Edit Device")
+        delete_act = menu.addAction("Delete Device…")
         menu.addSeparator()
         ping_act = menu.addAction("Ping")
         ports_act = menu.addAction("Port Scan")
@@ -428,6 +429,8 @@ class DeviceTableWidget(QWidget):
             self._toggle_monitor()
         elif action == edit_act:
             self._edit_device()
+        elif action == delete_act:
+            self._delete_selected()
         elif action == ping_act:
             self._ping_selected()
         elif action == ports_act:
@@ -499,6 +502,32 @@ class DeviceTableWidget(QWidget):
         if dlg.exec():
             self.reload_data()
             self.inventory_changed.emit()
+
+    def _delete_selected(self):
+        ids = self._selected_device_ids()
+        if not ids:
+            return
+        n = len(ids)
+        reply = QMessageBox.question(
+            self,
+            "Delete Device",
+            f"Remove {n} device(s) from inventory?\n"
+            "Related scan/monitor history for those devices is also removed.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        with session_scope() as session:
+            for dev_id in ids:
+                dev = session.get(Device, dev_id)
+                if not dev:
+                    continue
+                if dev.is_monitored:
+                    self.monitor_toggled.emit(dev.id, dev.ip_address, False)
+                session.delete(dev)
+        self.reload_data()
+        self.inventory_changed.emit()
 
     def _ping_selected(self):
         ids = self._selected_device_ids()
