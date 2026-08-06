@@ -15,6 +15,7 @@ from ..config import get_config
 from ..database.models import Device, ScanHistory
 from ..database.database import session_scope
 from ..core.monitoring import MonitorController
+from ..core.scanner import purge_ghost_devices
 from ..utils.logger import get_logger
 from ..utils.privileges import is_admin
 from ..utils.dependencies import get_optional_dependencies
@@ -74,6 +75,13 @@ class MainWindow(QMainWindow):
         self._deps_checker: DependencyChecker | None = None
         self._monitor_ctl = MonitorController()
         self._monitor_thread: MonitorThread | None = None
+        # Drop leftover ghost ICMP rows from older buggy scans
+        try:
+            n = purge_ghost_devices()
+            if n:
+                log.info("Startup inventory cleanup removed %s ghost devices", n)
+        except Exception as e:
+            log.debug("ghost purge skipped: %s", e)
         self._build_ui()
         self._start_status_refresh()
         self._start_monitoring()

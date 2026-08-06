@@ -17,7 +17,7 @@ from .constants import (
 DEFAULT_CONFIG: Dict[str, Any] = {
     "app": {
         "name": "NetOps Commander",
-        "version": "1.3.2",
+        "version": "1.3.3",
         "theme": DEFAULT_THEME,
         "scan_timeout": DEFAULT_SCAN_TIMEOUT,
         "scan_concurrency": DEFAULT_SCAN_CONCURRENCY,

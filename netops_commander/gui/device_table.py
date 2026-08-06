@@ -14,7 +14,12 @@ from PySide6.QtCore import Qt, QThread, Signal
 
 from ..database.database import session_scope
 from ..database.models import Device
-from ..core.scanner import background_scan, CancellableScan, persist_device
+from ..core.scanner import (
+    background_scan,
+    CancellableScan,
+    persist_device,
+    reconcile_scan_results,
+)
 from ..core.discovery import async_ping, async_tcp_connect
 from ..utils.export import export_csv, export_json, export_html
 from ..utils.validators import validate_cidr, validate_port_range
@@ -364,13 +369,19 @@ class DeviceTableWidget(QWidget):
         self.btn_scan.setEnabled(True)
         self.btn_cancel.setEnabled(False)
         self.progress.setVisible(False)
-        for d in devices:
-            persist_device(d)
+        cidr = self._scan_thread.cidr if self._scan_thread else ""
+        removed = 0
+        if cidr:
+            _saved, removed = reconcile_scan_results(cidr, devices)
+        else:
+            for d in devices:
+                persist_device(d)
         self.reload_data()
         self.inventory_changed.emit()
-        QMessageBox.information(
-            self, "Scan Complete", f"Discovered {len(devices)} online devices."
-        )
+        msg = f"Discovered {len(devices)} online devices."
+        if removed:
+            msg += f"\nRemoved {removed} stale/ghost entries from inventory."
+        QMessageBox.information(self, "Scan Complete", msg)
 
     def _scan_error(self, msg):
         self.btn_scan.setEnabled(True)

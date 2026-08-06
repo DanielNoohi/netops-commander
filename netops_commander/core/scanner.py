@@ -7,7 +7,7 @@ import asyncio
 import ipaddress
 import json
 from datetime import datetime, timezone
-from typing import Callable, Optional, List
+from typing import Callable, Optional, List, Tuple
 
 from .discovery import discover_host, DiscoveredDevice
 from ..database.database import session_scope
@@ -171,6 +171,98 @@ async def background_scan(
         error_callback(e)
     finally:
         scan_mgr._cancel_event.set()
+
+
+def _is_curated(dev: DeviceModel) -> bool:
+    """User-touched rows we should not auto-delete."""
+    if dev.is_monitored:
+        return True
+    if dev.notes and str(dev.notes).strip():
+        return True
+    if dev.tags and str(dev.tags).strip():
+        return True
+    return False
+
+
+def _has_real_mac(mac: Optional[str]) -> bool:
+    if not mac:
+        return False
+    m = mac.replace("-", ":").strip().upper()
+    return m not in ("", "00:00:00:00:00:00", "FF:FF:FF:FF:FF:FF")
+
+
+def purge_ghost_devices() -> int:
+    """
+    Remove inventory rows that look like ghost ICMP discoveries
+    (no real MAC, not monitored, no notes/tags).
+    Returns number deleted.
+    """
+    removed = 0
+    with session_scope() as session:
+        for dev in list(session.query(DeviceModel).all()):
+            if _has_real_mac(dev.mac_address):
+                continue
+            if _is_curated(dev):
+                if dev.online:
+                    dev.online = False
+                continue
+            session.delete(dev)
+            removed += 1
+    if removed:
+        log.info("Purged %s ghost device rows from inventory", removed)
+    return removed
+
+
+def reconcile_scan_results(cidr: str, devices: List[DiscoveredDevice]) -> Tuple[int, int]:
+    """
+    Persist hosts found in this scan and clean inventory for that CIDR.
+
+    - Saves/updates each online discovered device
+    - Devices in the CIDR not found this pass: deleted unless curated
+      (monitored / notes / tags), otherwise marked offline
+
+    Returns (saved_count, removed_count).
+    """
+    try:
+        network = ipaddress.ip_network(cidr, strict=False)
+    except ValueError as e:
+        log.error("reconcile: invalid CIDR %s: %s", cidr, e)
+        saved = sum(1 for d in devices if persist_device(d))
+        return saved, 0
+
+    found_ips = {d.ip_address for d in devices if d.online}
+    saved = 0
+    for d in devices:
+        if persist_device(d):
+            saved += 1
+
+    removed = 0
+    now = datetime.now(timezone.utc)
+    with session_scope() as session:
+        for dev in list(session.query(DeviceModel).all()):
+            try:
+                addr = ipaddress.ip_address(dev.ip_address)
+            except ValueError:
+                continue
+            if addr not in network:
+                continue
+            if dev.ip_address in found_ips:
+                continue
+            if _is_curated(dev):
+                dev.online = False
+                dev.last_check = now
+                continue
+            session.delete(dev)
+            removed += 1
+
+    log.info(
+        "reconcile_scan %s: saved=%s removed=%s found_ips=%s",
+        cidr,
+        saved,
+        removed,
+        len(found_ips),
+    )
+    return saved, removed
 
 
 def persist_device(device: DiscoveredDevice) -> bool:

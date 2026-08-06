@@ -5,7 +5,13 @@ Built with Python 3.11+, PySide6, SQLAlchemy, and async I/O.
 **Authorized use only** — never scan networks you do not own or have
 written permission to test.
 
-## Version 1.3.2 (Current)
+## Version 1.3.3 (Current)
+
+- **Inventory cleanup**: purge ghost rows (no MAC) on startup; after a scan,
+  reconcile the CIDR so the table and dashboard match found hosts only
+  (not stale “254 online” from older buggy scans).
+
+## Version 1.3.2
 
 - **Ghost-host filter**: require a real ARP MAC (not gateway proxy-ARP) before
   marking a host online. Stops `/24` scans reporting 254 fake “online” devices
@@ -112,6 +118,11 @@ Defaults in `config.yaml` (auto-created). Theme and other keys are updated via
 See `PROJECT_STRUCTURE.md`.
 
 ## Changelog
+
+### 1.3.3 — Inventory matches scan results
+- Startup purge of ghost ICMP inventory rows (no real MAC)
+- Post-scan reconcile deletes/marks offline CIDR hosts not found this pass
+- Version 1.3.2 → 1.3.3
 
 ### 1.3.2 — Reject ghost ICMP/TCP hosts
 - Online requires ARP/L2 confirmation (or local IP); proxy-ARP and “all ports
