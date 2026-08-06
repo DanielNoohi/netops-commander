@@ -11,7 +11,7 @@ from typing import Callable, Optional, List
 
 from .discovery import discover_host, DiscoveredDevice
 from ..database.database import session_scope
-from ..database.models import Device as DeviceModel
+from ..database.models import Device as DeviceModel, ScanHistory
 from ..config import get_config
 from ..utils.logger import get_logger
 
@@ -149,6 +149,8 @@ def persist_device(device: DiscoveredDevice) -> bool:
         config.get("app.monitoring_interval", 60),
     )
 
+    ports_json = json.dumps(list(device.open_ports or []))
+
     with session_scope() as session:
         existing = session.query(DeviceModel).filter_by(ip_address=device.ip_address).first()
         if existing:
@@ -156,12 +158,13 @@ def persist_device(device: DiscoveredDevice) -> bool:
             existing.mac_address = device.mac_address
             existing.vendor = device.vendor
             existing.latency_ms = device.latency_ms
-            existing.open_ports = json.dumps(list(device.open_ports or []))
+            existing.open_ports = ports_json
             existing.device_type = device.device_type
             existing.online = True
             existing.last_seen = now
             existing.last_check = now
             existing.updated_at = now
+            device_id = existing.id
             # Preserve monitoring state if already tracked
         else:
             new_dev = DeviceModel(
@@ -172,11 +175,26 @@ def persist_device(device: DiscoveredDevice) -> bool:
                 device_type=device.device_type,
                 online=True,
                 latency_ms=device.latency_ms,
-                open_ports=json.dumps(list(device.open_ports or [])),
+                open_ports=ports_json,
                 first_seen=now,
                 last_seen=now,
+                last_check=now,
                 is_monitored=False,  # opt-in
                 monitor_interval=default_monitor_interval,
             )
             session.add(new_dev)
+            session.flush()  # assign PK for ScanHistory FK
+            device_id = new_dev.id
+
+        session.add(
+            ScanHistory(
+                device_id=device_id,
+                scan_type=device.discovery_method or "ping",
+                online=True,
+                latency_ms=device.latency_ms,
+                ports_found=ports_json,
+                details=f"host={device.ip_address}",
+                timestamp=now,
+            )
+        )
     return True

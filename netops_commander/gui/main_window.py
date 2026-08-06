@@ -4,9 +4,9 @@ from __future__ import annotations
 import asyncio
 
 from PySide6.QtWidgets import (
-    QMainWindow, QSplitter,
+    QMainWindow, QSplitter, QToolBar,
     QStatusBar, QMessageBox,
-    QLabel,
+    QLabel, QApplication,
 )
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
@@ -18,11 +18,20 @@ from ..core.monitoring import MonitorController
 from ..utils.logger import get_logger
 from ..utils.privileges import is_admin
 from ..utils.dependencies import get_optional_dependencies
+from ..utils.network import get_local_subnet
 from .. import __version__
 from .dashboard import DashboardWidget
 from .device_table import DeviceTableWidget
 from .themes import apply_theme
-from .tools.ping_tool import PingToolWidget
+from .tools import (
+    PingToolWidget,
+    DnsToolDialog,
+    TracerouteToolDialog,
+    SubnetToolDialog,
+    WolToolDialog,
+    TlsToolDialog,
+    RouteArpToolDialog,
+)
 
 log = get_logger(__name__)
 
@@ -30,14 +39,9 @@ log = get_logger(__name__)
 class DependencyChecker(QThread):
     """Check optional dependencies in background to avoid UI freeze."""
     finished = Signal(dict)
-    _running = False
 
     def run(self):
-        DependencyChecker._running = True
-        try:
-            self.finished.emit(get_optional_dependencies())
-        finally:
-            DependencyChecker._running = False
+        self.finished.emit(get_optional_dependencies())
 
 
 class MonitorThread(QThread):
@@ -67,6 +71,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"NetOps Commander v{__version__}")
         self.setMinimumSize(1400, 900)
         self._deps: dict = {}
+        self._deps_checker: DependencyChecker | None = None
         self._monitor_ctl = MonitorController()
         self._monitor_thread: MonitorThread | None = None
         self._build_ui()
@@ -83,10 +88,27 @@ class MainWindow(QMainWindow):
         central.setSizes([400, 1000])
         self.setCentralWidget(central)
 
-        # Connect signals
         self.device_table.inventory_changed.connect(self._refresh_dashboard)
         self.device_table.monitor_toggled.connect(self._on_monitor_toggled)
 
+        self._build_menus()
+        self._build_toolbar()
+
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.lbl_priv = QLabel()
+        self.lbl_deps = QLabel()
+        self.lbl_monitor = QLabel()
+        self.lbl_ready = QLabel(f"Ready · v{__version__}")
+        self.status_bar.addWidget(self.lbl_priv)
+        self.status_bar.addWidget(self.lbl_deps)
+        self.status_bar.addWidget(self.lbl_ready)
+        self.status_bar.addPermanentWidget(self.lbl_monitor)
+
+        cfg = get_config()
+        apply_theme(QApplication.instance(), cfg.get("app.theme", "dark"))
+
+    def _build_menus(self):
         menu = self.menuBar()
         file_menu = menu.addMenu("File")
         export_menu = file_menu.addMenu("Export")
@@ -109,9 +131,21 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self._theme_act)
 
         tools_menu = menu.addMenu("Tools")
-        ping_act = QAction("Ping Tool", self)
-        ping_act.triggered.connect(self._open_ping_tool)
-        tools_menu.addAction(ping_act)
+        tool_actions = [
+            ("Scan Network…", self._toolbar_scan),
+            ("Ping Tool", self._open_ping_tool),
+            ("DNS Lookup", self._open_dns_tool),
+            ("Traceroute", self._open_traceroute_tool),
+            ("Subnet Calculator", self._open_subnet_tool),
+            ("TLS Certificate Check", self._open_tls_tool),
+            ("Wake-on-LAN", self._open_wol_tool),
+            ("Route / ARP Tables", self._open_route_arp_tool),
+        ]
+        for label, slot in tool_actions:
+            act = QAction(label, self)
+            act.triggered.connect(slot)
+            tools_menu.addAction(act)
+        tools_menu.addSeparator()
         deps_action = QAction("Dependencies", self)
         deps_action.triggered.connect(self._show_dependencies)
         tools_menu.addAction(deps_action)
@@ -121,26 +155,61 @@ class MainWindow(QMainWindow):
         about_act.triggered.connect(self._show_about)
         help_menu.addAction(about_act)
 
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.lbl_priv = QLabel()
-        self.lbl_deps = QLabel()
-        self.lbl_monitor = QLabel()
-        self.status_bar.addWidget(self.lbl_priv)
-        self.status_bar.addWidget(self.lbl_deps)
-        self.status_bar.addPermanentWidget(self.lbl_monitor)
-
-        # Apply theme
-        apply_theme(self, current_theme)
+    def _build_toolbar(self):
+        tb = QToolBar("Main")
+        tb.setMovable(False)
+        self.addToolBar(tb)
+        actions = [
+            ("Scan", self._toolbar_scan),
+            ("Ping", self._open_ping_tool),
+            ("DNS", self._open_dns_tool),
+            ("Trace", self._open_traceroute_tool),
+            ("Subnet", self._open_subnet_tool),
+            ("TLS", self._open_tls_tool),
+            ("WOL", self._open_wol_tool),
+            ("Theme", self._toggle_theme),
+        ]
+        for label, slot in actions:
+            act = QAction(label, self)
+            act.triggered.connect(slot)
+            tb.addAction(act)
 
     # ---- Theme ----
     def _toggle_theme(self):
         cfg = get_config()
         current = cfg.get("app.theme", "dark")
         new_theme = "light" if current == "dark" else "dark"
-        cfg["app"]["theme"] = new_theme
-        apply_theme(self, new_theme)
-        self._theme_act.setText(f"Switch to {'Light' if new_theme == 'dark' else 'Dark'} Theme")
+        cfg.set("app.theme", new_theme)
+        apply_theme(QApplication.instance(), new_theme)
+        self._theme_act.setText(
+            f"Switch to {'Light' if new_theme == 'dark' else 'Dark'} Theme"
+        )
+        self.lbl_ready.setText(f"Theme → {new_theme}")
+
+    # ---- Tools ----
+    def _toolbar_scan(self):
+        self.device_table.start_scan_dialog()
+
+    def _open_ping_tool(self):
+        PingToolWidget(self).exec()
+
+    def _open_dns_tool(self):
+        DnsToolDialog(self).exec()
+
+    def _open_traceroute_tool(self):
+        TracerouteToolDialog(self).exec()
+
+    def _open_subnet_tool(self):
+        SubnetToolDialog(self, initial_cidr=get_local_subnet() or "").exec()
+
+    def _open_tls_tool(self):
+        TlsToolDialog(self).exec()
+
+    def _open_wol_tool(self):
+        WolToolDialog(self).exec()
+
+    def _open_route_arp_tool(self):
+        RouteArpToolDialog(self).exec()
 
     # ---- Monitoring ----
     def _start_monitoring(self):
@@ -155,7 +224,6 @@ class MainWindow(QMainWindow):
         self._monitor_ctl.sync_device(device_id, ip, monitored)
         count = len(self._monitor_ctl.devices)
         self.lbl_monitor.setText(f"Monitoring: {count} devices")
-        # Start monitoring loop if we now have devices
         if count > 0 and (self._monitor_thread is None or not self._monitor_thread.isRunning()):
             self._monitor_thread = MonitorThread(self._monitor_ctl)
             self._monitor_thread.alert.connect(self._on_monitor_alert)
@@ -167,6 +235,7 @@ class MainWindow(QMainWindow):
     def _on_monitor_alert(self, severity: str, message: str, device_id):
         self.dashboard.add_alert_from_db()
         self._refresh_dashboard()
+        self.lbl_ready.setText(f"Alert: {message}")
 
     # ---- Dashboard refresh ----
     def _refresh_dashboard(self):
@@ -194,10 +263,14 @@ class MainWindow(QMainWindow):
         if not self._deps:
             self._deps = get_optional_dependencies()
             self._update_deps_label()
-        elif not DependencyChecker._running:
-            checker = DependencyChecker()
-            checker.finished.connect(self._on_deps_checked)
-            checker.start()
+            return
+
+        if self._deps_checker is not None and self._deps_checker.isRunning():
+            return
+
+        self._deps_checker = DependencyChecker()
+        self._deps_checker.finished.connect(self._on_deps_checked)
+        self._deps_checker.start()
 
     def _on_deps_checked(self, deps):
         self._deps = deps
@@ -212,22 +285,16 @@ class MainWindow(QMainWindow):
         lines = [f"  {'✓' if v else '✗'} {k}" for k, v in deps.items()]
         QMessageBox.information(self, "Dependencies", "\n".join(lines))
 
-    def _open_ping_tool(self):
-        widget = PingToolWidget()
-        widget.setWindowModality(Qt.WindowModality.ApplicationModal)
-        widget.exec()
-
     def _show_about(self):
         QMessageBox.about(
             self, "About NetOps Commander",
             f"NetOps Commander v{__version__}\n\n"
-            "Professional network administration tool.\n"
+            "Network inventory, monitoring, and diagnostics.\n"
             "For authorized use only.\n"
             "Licensed under GPL-3.0.",
         )
 
     def closeEvent(self, event):
-        """Stop monitoring on exit."""
         if self._monitor_thread and self._monitor_thread.isRunning():
             self._monitor_ctl.stop()
             self._monitor_thread.wait(3000)

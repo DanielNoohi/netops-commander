@@ -30,6 +30,7 @@ class MonitorController:
         self._task: Optional[asyncio.Task] = None
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._prev_online: Dict[int, bool] = {}
+        self._prev_high_latency: Dict[int, bool] = {}
         # Optional UI hook: alert_callback(severity, message, device_id?)
         self.alert_callback: Optional[Callable] = None
         self._max_devices = int(cfg.get("app.monitor_max_devices", 25))
@@ -47,10 +48,12 @@ class MonitorController:
     def remove_device(self, device_id: int) -> None:
         self.devices.pop(device_id, None)
         self._prev_online.pop(device_id, None)
+        self._prev_high_latency.pop(device_id, None)
 
     def load_from_db(self) -> int:
         """Load all is_monitored devices from SQLite. Returns count loaded."""
         self.devices.clear()
+        self._prev_high_latency.clear()
         with session_scope() as session:
             rows = (
                 session.query(Device)
@@ -151,7 +154,7 @@ class MonitorController:
                         dev.last_seen = now
                     hostname = dev.hostname or dev.ip_address
 
-                # State-transition alerts
+                # State-transition alerts (edge-triggered to avoid spam)
                 if prev is True and not online:
                     create_alert(
                         session,
@@ -170,7 +173,12 @@ class MonitorController:
                         severity=severity_for("recovery"),
                     )
                     self._emit("info", f"{ip} recovered", device_id)
-                elif online and latency is not None and latency >= HIGH_LATENCY_MS:
+
+                high_now = bool(
+                    online and latency is not None and latency >= HIGH_LATENCY_MS
+                )
+                was_high = self._prev_high_latency.get(device_id, False)
+                if high_now and not was_high:
                     create_alert(
                         session,
                         "high_latency",
@@ -178,7 +186,12 @@ class MonitorController:
                         device_id=device_id,
                         severity=severity_for("high_latency"),
                     )
-                    self._emit("warning", f"{ip} high latency {latency:.0f}ms", device_id)
+                    self._emit(
+                        "warning",
+                        f"{ip} high latency {latency:.0f}ms",
+                        device_id,
+                    )
+                self._prev_high_latency[device_id] = high_now
 
             self._prev_online[device_id] = online
 

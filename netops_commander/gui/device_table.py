@@ -261,6 +261,7 @@ class DeviceTableWidget(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._context_menu)
+        self.table.doubleClicked.connect(lambda _idx: self._edit_device())
         self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
 
@@ -404,8 +405,13 @@ class DeviceTableWidget(QWidget):
         menu = QMenu(self)
         monitor_act = menu.addAction("Toggle Monitoring")
         edit_act = menu.addAction("Edit Device")
+        menu.addSeparator()
         ping_act = menu.addAction("Ping")
         ports_act = menu.addAction("Port Scan")
+        dns_act = menu.addAction("DNS Lookup")
+        trace_act = menu.addAction("Traceroute")
+        tls_act = menu.addAction("TLS Check")
+        wol_act = menu.addAction("Wake-on-LAN")
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         if action == monitor_act:
             self._toggle_monitor()
@@ -415,6 +421,50 @@ class DeviceTableWidget(QWidget):
             self._ping_selected()
         elif action == ports_act:
             self._portscan_selected()
+        elif action == dns_act:
+            self._dns_selected()
+        elif action == trace_act:
+            self._traceroute_selected()
+        elif action == tls_act:
+            self._tls_selected()
+        elif action == wol_act:
+            self._wol_selected()
+
+    def _selected_host_mac(self):
+        ids = self._selected_device_ids()
+        if not ids:
+            return None, None
+        with session_scope() as session:
+            dev = session.get(Device, ids[0])
+            if not dev:
+                return None, None
+            return dev.ip_address, dev.mac_address or ""
+
+    def _dns_selected(self):
+        from .tools.dns_tool import DnsToolDialog
+        host, _ = self._selected_host_mac()
+        if not host:
+            return
+        DnsToolDialog(self, initial_host=host).exec()
+
+    def _traceroute_selected(self):
+        from .tools.traceroute_tool import TracerouteToolDialog
+        host, _ = self._selected_host_mac()
+        if not host:
+            return
+        TracerouteToolDialog(self, initial_host=host).exec()
+
+    def _tls_selected(self):
+        from .tools.tls_tool import TlsToolDialog
+        host, _ = self._selected_host_mac()
+        if not host:
+            return
+        TlsToolDialog(self, initial_host=host).exec()
+
+    def _wol_selected(self):
+        from .tools.wol_tool import WolToolDialog
+        _, mac = self._selected_host_mac()
+        WolToolDialog(self, initial_mac=mac or "").exec()
 
     def _toggle_monitor(self):
         ids = self._selected_device_ids()

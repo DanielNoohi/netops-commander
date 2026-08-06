@@ -66,8 +66,8 @@ class PingToolWorker(QThread):
 class PingToolWidget(QDialog):
     """Standalone ping tool opened from the Tools menu."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.setWindowTitle("Ping Tool")
         self.setMinimumSize(520, 380)
         self._worker: PingToolWorker | None = None

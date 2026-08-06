@@ -44,13 +44,16 @@ jobs:
       - name: Run scan pipeline test
         run: python tests/test_scan_pipeline.py
 
-      - name: Run unit tests (ports, monitor stop)
+      - name: Run unit tests
         run: |
           python tests/test_ports.py
           python tests/test_monitor_stop.py
+          python tests/test_config.py
+          python tests/test_validators.py
+          python tests/test_subnet.py
+          python tests/test_wol.py
 
-      # Project convention (v1.1.1 bugfix): __version__ in __init__.py must match
-      # APP_VERSION in constants.py so the GUI title bar and app metadata agree.
+      # __version__ in __init__.py must match APP_VERSION in constants.py.
       - name: Verify version consistency
         run: |
           V1=$(grep -oP '__version__ = "\K[^"]+' netops_commander/__init__.py)
@@ -61,6 +64,6 @@ jobs:
           fi
           echo "Version consistent: $V1"
 
-      # Hard gate (as of 1.2.0): pyflakes must be clean.
+      # Hard gate: pyflakes must be clean.
       - name: pyflakes (unused imports / common issues)
         run: python -m pyflakes main.py netops_commander tests

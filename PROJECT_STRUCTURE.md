@@ -1,55 +1,70 @@
 # NetOps Commander — Project Structure
 
 ```
-netops_commander/
-├── main.py                              # Entry point: QApplication + DB init + MainWindow
-├── requirements.txt                     # Core runtime dependencies
-├── requirements-optional.txt            # Optional deps (nmap, scapy, pysnmp)
-├── README.md                            # User-facing docs (features, install, changelog)
-├── config.yaml                          # Sample/default configuration
+.
+├── main.py                              # Thin entry → netops_commander.app.run
+├── pyproject.toml                       # Packaging + console script
+├── requirements.txt                     # Core deps
+├── requirements-optional.txt            # nmap / scapy / pysnmp
+├── config.yaml                          # Runtime defaults (theme, timeouts, …)
+├── README.md
+├── AGENTS.md
 ├── netops_commander/
-│   ├── __init__.py                      # Package metadata: __version__ (mirrors constants)
-│   ├── config.py                        # ConfigManager: YAML load/save + DEFAULT_CONFIG
-│   ├── constants.py                     # APP_VERSION, ports, timeouts, limits, ICON_PATHS
-│   ├── database/
-│   │   ├── __init__.py
-│   │   ├── models.py                    # SQLAlchemy models (Device, ScanHistory, MonitorResult, Alert)
-│   │   ├── database.py                  # Engine, session_scope, init_database (migrations + VACUUM)
-│   │   └── migrations.py                # Schema migrations (versioned)
+│   ├── __init__.py                      # __version__
+│   ├── __main__.py                      # python -m netops_commander
+│   ├── app.py                           # QApplication bootstrap
+│   ├── config.py                        # ConfigManager (YAML)
+│   ├── constants.py                     # Version, ports, limits, alert types
 │   ├── core/
-│   │   ├── __init__.py
-│   │   ├── scanner.py                   # CancellableScan, scan_cidr, background_scan, persist_device
-│   │   ├── discovery.py                 # async_ping, async_tcp_connect, discover_host, OUI vendors
-│   │   ├── monitoring.py                # MonitorController (poll loop, alerts, clean stop)
-│   │   └── alerts.py                    # Alert severity mapping + create_alert
+│   │   ├── discovery.py                 # ping / ARP / TCP / OUI / type guess
+│   │   ├── scanner.py                   # scan_cidr, persist_device + ScanHistory
+│   │   ├── monitoring.py                # MonitorController (thread-safe stop)
+│   │   └── alerts.py                    # severity_for()
+│   ├── database/
+│   │   ├── models.py
+│   │   ├── database.py
+│   │   └── migrations.py
 │   ├── gui/
-│   │   ├── __init__.py
-│   │   ├── main_window.py               # MainWindow, MonitorThread, menu bar, status bar
-│   │   ├── dashboard.py                 # Network info, stats, alerts table (auto-refresh)
-│   │   ├── device_table.py              # Inventory table, context menu, PingWorker, PortScanWorker
-│   │   ├── device_dialog.py             # Add/Edit device dialog
-│   │   ├── themes.py                    # Dark/light QSS themes + apply_theme
+│   │   ├── main_window.py               # Menus, toolbar, monitor thread
+│   │   ├── dashboard.py
+│   │   ├── device_table.py              # Inventory + context tools
+│   │   ├── device_dialog.py
+│   │   ├── themes.py
 │   │   └── tools/
-│   │       ├── __init__.py
-│   │       └── ping_tool.py             # Standalone Ping Tool dialog (continuous ping)
+│   │       ├── base.py                  # Shared ToolDialog / LineWorker
+│   │       ├── ping_tool.py
+│   │       ├── dns_tool.py
+│   │       ├── traceroute_tool.py
+│   │       ├── subnet_tool.py
+│   │       ├── tls_tool.py
+│   │       ├── wol_tool.py
+│   │       └── route_arp_tool.py
 │   └── utils/
-│       ├── __init__.py
-│       ├── network.py                   # Local interface info, gateway, DNS, public IP
-│       ├── validators.py                # CIDR/IP/host/port validation, target limits
-│       ├── ports.py                     # parse_open_ports / format_open_ports (JSON text ↔ list)
-│       ├── export.py                    # export_csv / export_json / export_html
-│       ├── logger.py                    # RotatingFileHandler + stdout setup
-│       ├── privileges.py                # Admin/root detection
-│       └── dependencies.py              # Optional dependency detection (nmap, scapy, ...)
+│       ├── network.py
+│       ├── validators.py
+│       ├── ports.py
+│       ├── export.py
+│       ├── logger.py
+│       ├── privileges.py
+│       ├── dependencies.py
+│       ├── subnet.py
+│       ├── wol.py
+│       ├── dns_lookup.py
+│       ├── traceroute.py
+│       ├── tls_check.py
+│       └── route_arp.py
 └── tests/
-    ├── test_scan_pipeline.py            # Scan pipeline: scan_cidr, background_scan, cancel
-    ├── test_monitor_stop.py             # Monitor stop/cancel from another thread
-    └── test_ports.py                    # parse_open_ports / format_open_ports unit tests
+    ├── test_scan_pipeline.py
+    ├── test_monitor_stop.py
+    ├── test_ports.py
+    ├── test_config.py
+    ├── test_validators.py
+    ├── test_subnet.py
+    └── test_wol.py
 ```
 
 ## Notes
 
-- `__version__` in `netops_commander/__init__.py` must always match
-  `APP_VERSION` in `netops_commander/constants.py` (enforced by CI).
-- GUI modules import with relative imports (`from ..core.discovery import ...`).
-- No `shell=True` anywhere — subprocess calls use explicit argument lists.
+- Keep `__version__` == `APP_VERSION` (CI enforced).
+- No `shell=True`; subprocess uses argv lists.
+- GUI network work runs in `QThread` workers.

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import Dict
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
+
 
 DARK: Dict[str, str] = {
     "bg": "#121212",
@@ -134,10 +135,17 @@ def build_stylesheet(name: str) -> str:
     """
 
 
-def apply_theme(app: QApplication | None, name: str) -> None:
-    """Apply dark/light stylesheet to the QApplication."""
-    if app is None:
-        app = QApplication.instance()
-    if app is None:
+def apply_theme(target: QApplication | QWidget | None, name: str) -> None:
+    """Apply dark/light stylesheet app-wide (prefer QApplication).
+
+    If ``target`` is a widget, still prefer the running QApplication so
+    dialogs and other top-level windows pick up the theme. Falls back to
+    setting the stylesheet on ``target`` only when no app instance exists.
+    """
+    app = QApplication.instance()
+    sheet = build_stylesheet(name)
+    if app is not None:
+        app.setStyleSheet(sheet)
         return
-    app.setStyleSheet(build_stylesheet(name))
+    if target is not None:
+        target.setStyleSheet(sheet)

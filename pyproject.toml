@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netops-commander"
+version = "1.3.0"
+description = "Desktop NetOps inventory, monitoring, and diagnostics toolkit"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Daniel Noohi" }]
+dependencies = [
+  "PySide6>=6.6.0",
+  "SQLAlchemy>=2.0.0",
+  "psutil>=5.9.0",
+  "PyYAML>=6.0.1",
+]
+
+[project.optional-dependencies]
+optional = [
+  "python-nmap>=0.7.1",
+  "scapy>=2.5.0",
+  "pysnmp>=7.1.0",
+]
+dev = [
+  "pyflakes>=3.2.0",
+]
+
+[project.scripts]
+netops-commander = "netops_commander.app:main"
+
+[tool.setuptools.packages.find]
+include = ["netops_commander*"]

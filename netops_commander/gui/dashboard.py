@@ -61,7 +61,7 @@ class DashboardWidget(QWidget):
         self.lbl_online = QLabel("Online: 0")
         self.lbl_offline = QLabel("Offline: 0")
         self.lbl_total = QLabel("Total: 0")
-        self.lbl_scans = QLabel("Recent 0")
+        self.lbl_scans = QLabel("Scans: 0")
         for w in (self.lbl_online, self.lbl_offline, self.lbl_total, self.lbl_scans):
             w.setStyleSheet("font-size: 14px; font-weight: bold;")
             h.addWidget(w)
@@ -105,7 +105,7 @@ class DashboardWidget(QWidget):
         self.lbl_online.setText(f"Online: {online}")
         self.lbl_offline.setText(f"Offline: {offline}")
         self.lbl_total.setText(f"Total: {total}")
-        self.lbl_scans.setText(f"Recent {scans}")
+        self.lbl_scans.setText(f"Scans: {scans}")
 
     def reload_alerts(self, limit: int = 20):
         """Load recent alerts from the database into the table."""

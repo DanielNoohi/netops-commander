@@ -1,5 +1,6 @@
 """Configuration management module."""
 
+import copy
 import yaml
 from pathlib import Path
 from typing import Any, Dict
@@ -16,7 +17,7 @@ from .constants import (
 DEFAULT_CONFIG: Dict[str, Any] = {
     "app": {
         "name": "NetOps Commander",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "theme": DEFAULT_THEME,
         "scan_timeout": DEFAULT_SCAN_TIMEOUT,
         "scan_concurrency": DEFAULT_SCAN_CONCURRENCY,
@@ -46,7 +47,8 @@ class ConfigManager:
 
     def __init__(self, config_path: str = "config.yaml"):
         self.config_path = Path(config_path)
-        self._config = DEFAULT_CONFIG.copy()
+        # Deep copy so nested mutations never alter DEFAULT_CONFIG
+        self._config = copy.deepcopy(DEFAULT_CONFIG)
         self.load()
 
     def load(self) -> None:
