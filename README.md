@@ -5,7 +5,15 @@ Built with Python 3.11+, PySide6, SQLAlchemy, and async I/O.
 **Authorized use only** — never scan networks you do not own or have
 written permission to test.
 
-## Version 1.3.4 (Current)
+## Version 1.4.0 (Current)
+
+- **GUI**: scan dialog (estimate + local subnet), ping latency sparkline,
+  HTTP/RDP/SSH launchers, Wi‑Fi card, recent activity, empty-state inventory,
+  keyboard shortcuts, device dialog latency history
+- **Tests**: monitor alert edges, tools utils, network/wifi parsing, headless
+  GUI smoke (`QT_QPA_PLATFORM=offscreen`) in CI with PySide6
+
+## Version 1.3.4
 
 - **Settings** dialog (File → Settings): theme, scan timeout/concurrency,
   `require_arp`, monitor interval/max, history retention
@@ -47,10 +55,10 @@ written permission to test.
 - Scan history recorded in SQLite
 
 ### Dashboard
-- Interface / IP / subnet / gateway / DNS / public IP
-- Online/offline/total counts and scan-history count
+- Interface / IP / subnet / gateway / DNS / public IP / Wi‑Fi
+- Online/offline/total/monitored counts and recent activity
 - Alerts feed (offline / recovery / high latency) with acknowledge
-- File → Settings for scan / monitor / retention preferences
+- File → Settings; shortcuts: Ctrl+R scan, Ctrl+F search, F5 refresh
 
 ### Monitoring
 - Opt-in per-device monitoring with clean start/stop
@@ -67,6 +75,8 @@ written permission to test.
 | TLS certificate check | Tools / context menu |
 | Wake-on-LAN | Tools / context menu |
 | Route + ARP tables | Tools menu |
+| HTTP / HTTPS / RDP / SSH launchers | Context menu / device dialog |
+| Live ping latency sparkline | Ping tool |
 | Dark/light theme | View / toolbar (persisted) |
 
 ### Data
@@ -75,8 +85,7 @@ written permission to test.
 - Preferences in `config.yaml`
 
 ### Planned
-- Live ping graph, Wi‑Fi details, app launchers (RDP/SSH/…)
-- Multi-probe packet-loss alerts; SQLite-backed settings UI
+- Multi-probe packet-loss alerts
 - Deep nmap/SNMP integration in the scan pipeline
 
 ## Requirements
@@ -127,6 +136,12 @@ Defaults in `config.yaml` (auto-created). Theme and other keys are updated via
 See `PROJECT_STRUCTURE.md`.
 
 ## Changelog
+
+### 1.4.0 — GUI polish + test depth
+- Scan dialog, latency sparkline, launchers, Wi‑Fi + activity dashboard
+- Shortcuts; empty inventory state; device latency history
+- Broad unit suite + offscreen GUI smoke tests in CI
+- Version 1.3.4 → 1.4.0
 
 ### 1.3.4 — Settings, retention, harden exports/tests
 - File → Settings for key scan/monitor preferences

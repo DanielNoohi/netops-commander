@@ -1,4 +1,4 @@
-"""Dashboard widget with live stats and alerts."""
+"""Dashboard widget with live stats, Wi-Fi, history, and alerts."""
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
@@ -10,8 +10,9 @@ from PySide6.QtCore import QTimer, QThread, Signal, Qt
 from PySide6.QtGui import QColor
 
 from ..database.database import session_scope
-from ..database.models import Alert
+from ..database.models import Alert, Device, MonitorResult, ScanHistory
 from ..utils.network import get_active_interface, get_public_ip, get_dns_servers, get_local_subnet
+from ..utils.wifi import get_wifi_info, format_wifi_summary
 from ..utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -26,6 +27,7 @@ class NetworkInfoWorker(QThread):
         info["public_ip"] = get_public_ip(timeout=3)
         info["dns"] = get_dns_servers()
         info["subnet"] = get_local_subnet()
+        info["wifi"] = format_wifi_summary(get_wifi_info())
         self.finished.emit(info)
 
 
@@ -36,6 +38,7 @@ class DashboardWidget(QWidget):
         self.layout().setSpacing(10)
         self._build_network_card()
         self._build_stats_card()
+        self._build_activity_card()
         self._build_alerts_table()
         self._start_refresh()
 
@@ -48,12 +51,14 @@ class DashboardWidget(QWidget):
         self.lbl_gateway = QLabel("Gateway: ...")
         self.lbl_dns = QLabel("DNS: ...")
         self.lbl_public_ip = QLabel("Public IP: ...")
+        self.lbl_wifi = QLabel("Wi-Fi: ...")
         gl.addWidget(self.lbl_iface, 0, 0)
         gl.addWidget(self.lbl_local_ip, 0, 1)
         gl.addWidget(self.lbl_subnet, 1, 0)
         gl.addWidget(self.lbl_gateway, 1, 1)
         gl.addWidget(self.lbl_dns, 2, 0)
         gl.addWidget(self.lbl_public_ip, 2, 1)
+        gl.addWidget(self.lbl_wifi, 3, 0, 1, 2)
         grp.setLayout(gl)
         self.layout().addWidget(grp)
 
@@ -64,10 +69,26 @@ class DashboardWidget(QWidget):
         self.lbl_offline = QLabel("Offline: 0")
         self.lbl_total = QLabel("Total: 0")
         self.lbl_scans = QLabel("Scans: 0")
-        for w in (self.lbl_online, self.lbl_offline, self.lbl_total, self.lbl_scans):
-            w.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self.lbl_monitored = QLabel("Monitored: 0")
+        for w in (
+            self.lbl_online, self.lbl_offline, self.lbl_total,
+            self.lbl_scans, self.lbl_monitored,
+        ):
+            w.setStyleSheet("font-size: 13px; font-weight: bold;")
             h.addWidget(w)
         grp.setLayout(h)
+        self.layout().addWidget(grp)
+
+    def _build_activity_card(self):
+        grp = QGroupBox("Recent Activity")
+        layout = QVBoxLayout()
+        self.activity_table = QTableWidget(0, 3)
+        self.activity_table.setHorizontalHeaderLabels(["Time", "Kind", "Detail"])
+        self.activity_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.activity_table.setMaximumHeight(140)
+        self.activity_table.setAlternatingRowColors(True)
+        layout.addWidget(self.activity_table)
+        grp.setLayout(layout)
         self.layout().addWidget(grp)
 
     def _build_alerts_table(self):
@@ -112,15 +133,68 @@ class DashboardWidget(QWidget):
         dns = info.get("dns", [])
         self.lbl_dns.setText(f"DNS: {', '.join(dns[:3]) if dns else 'Unknown'}")
         self.lbl_public_ip.setText(f"Public IP: {info.get('public_ip', 'Unknown')}")
+        self.lbl_wifi.setText(f"Wi-Fi: {info.get('wifi', 'N/A')}")
 
-    def update_stats(self, online: int, offline: int, total: int, scans: int = 0):
+    def update_stats(
+        self,
+        online: int,
+        offline: int,
+        total: int,
+        scans: int = 0,
+        monitored: int = 0,
+    ):
         self.lbl_online.setText(f"Online: {online}")
         self.lbl_offline.setText(f"Offline: {offline}")
         self.lbl_total.setText(f"Total: {total}")
         self.lbl_scans.setText(f"Scans: {scans}")
+        self.lbl_monitored.setText(f"Monitored: {monitored}")
+
+    def reload_activity(self, limit: int = 8):
+        """Show recent scan history + monitor samples."""
+        try:
+            rows: list[tuple] = []
+            with session_scope() as session:
+                for sh in (
+                    session.query(ScanHistory)
+                    .order_by(ScanHistory.timestamp.desc())
+                    .limit(limit)
+                    .all()
+                ):
+                    ip = ""
+                    if sh.device_id:
+                        dev = session.get(Device, sh.device_id)
+                        ip = dev.ip_address if dev else ""
+                    ts = sh.timestamp.strftime("%H:%M:%S") if sh.timestamp else ""
+                    detail = f"{ip} {sh.scan_type} {'up' if sh.online else 'down'}"
+                    if sh.latency_ms is not None:
+                        detail += f" {sh.latency_ms:.0f}ms"
+                    rows.append((ts, "scan", detail))
+                for mr in (
+                    session.query(MonitorResult)
+                    .order_by(MonitorResult.timestamp.desc())
+                    .limit(limit)
+                    .all()
+                ):
+                    ip = ""
+                    if mr.device_id:
+                        dev = session.get(Device, mr.device_id)
+                        ip = dev.ip_address if dev else ""
+                    ts = mr.timestamp.strftime("%H:%M:%S") if mr.timestamp else ""
+                    lat = f"{mr.latency_ms:.0f}ms" if mr.latency_ms is not None else "—"
+                    detail = f"{ip} {'up' if mr.online else 'down'} {lat}"
+                    rows.append((ts, "monitor", detail))
+            # Keep freshest-looking order as listed (already desc per source)
+            rows = rows[:limit]
+            self.activity_table.setRowCount(len(rows))
+            for i, (ts, kind, detail) in enumerate(rows):
+                self.activity_table.setItem(i, 0, QTableWidgetItem(ts))
+                self.activity_table.setItem(i, 1, QTableWidgetItem(kind))
+                self.activity_table.setItem(i, 2, QTableWidgetItem(detail))
+        except Exception as e:
+            log.debug("reload_activity error: %s", e)
 
     def reload_alerts(self, limit: int = 20):
-        """Load recent unacknowledged alerts (then recent ack'd) into the table."""
+        """Load recent unacknowledged alerts into the table."""
         try:
             with session_scope() as session:
                 rows = (
@@ -186,3 +260,4 @@ class DashboardWidget(QWidget):
     def add_alert_from_db(self):
         """Convenience: reload alerts after a new alert is created."""
         self.reload_alerts()
+        self.reload_activity()

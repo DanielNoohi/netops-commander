@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QStatusBar, QMessageBox,
     QLabel, QApplication,
 )
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
 
 from ..config import get_config
@@ -89,6 +89,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             log.debug("history retention skipped: %s", e)
         self._build_ui()
+        self._install_shortcuts()
         self._start_status_refresh()
         self._start_monitoring()
         self._refresh_dashboard()
@@ -196,6 +197,17 @@ class MainWindow(QMainWindow):
             act.triggered.connect(slot)
             tb.addAction(act)
 
+    def _install_shortcuts(self):
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=self._focus_search)
+        QShortcut(QKeySequence("Ctrl+R"), self, activated=self._toolbar_scan)
+        QShortcut(QKeySequence("Ctrl+,"), self, activated=self._open_settings)
+        QShortcut(QKeySequence("F5"), self, activated=self._refresh_dashboard)
+        QShortcut(QKeySequence("Ctrl+E"), self, activated=lambda: self.device_table.export_devices("csv"))
+
+    def _focus_search(self):
+        self.device_table.search.setFocus()
+        self.device_table.search.selectAll()
+
     # ---- Theme / Settings ----
     def _toggle_theme(self):
         cfg = get_config()
@@ -224,7 +236,8 @@ class MainWindow(QMainWindow):
         self.device_table.start_scan_dialog()
 
     def _open_ping_tool(self):
-        PingToolWidget(self).exec()
+        host, _ = self.device_table._selected_host_mac()
+        PingToolWidget(self, initial_host=host or "").exec()
 
     def _open_dns_tool(self):
         DnsToolDialog(self).exec()
@@ -277,8 +290,10 @@ class MainWindow(QMainWindow):
             online = session.query(Device).filter(Device.online.is_(True)).count()
             offline = total - online
             scans = session.query(ScanHistory).count()
-        self.dashboard.update_stats(online, offline, total, scans)
+            monitored = session.query(Device).filter(Device.is_monitored.is_(True)).count()
+        self.dashboard.update_stats(online, offline, total, scans, monitored=monitored)
         self.dashboard.reload_alerts()
+        self.dashboard.reload_activity()
 
     # ---- Status bar ----
     def _start_status_refresh(self):

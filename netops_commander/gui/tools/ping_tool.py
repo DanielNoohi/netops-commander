@@ -1,4 +1,4 @@
-"""Ping tool: continuous ICMP ping with live output and stop control."""
+"""Ping tool: continuous ICMP ping with live output, sparkline, and stop control."""
 import asyncio
 
 from PySide6.QtCore import QThread, Signal
@@ -9,12 +9,14 @@ from PySide6.QtWidgets import (
 
 from ...core.discovery import async_ping
 from ...utils.validators import is_valid_host
+from ..widgets.sparkline import LatencySparkline
 
 
 class PingToolWorker(QThread):
     """Continuous ping loop in a worker thread (non-blocking UI)."""
 
     line = Signal(str)
+    sample = Signal(object)  # float | None
     finished_ok = Signal()
 
     def __init__(self, host: str, timeout: float = 2.0, interval: float = 1.0):
@@ -40,18 +42,20 @@ class PingToolWorker(QThread):
         sent = 0
         received = 0
         latencies = []
-        self.line.emit(f"Pinging {self.host} (Ctrl+Stop to end)...")
+        self.line.emit(f"Pinging {self.host} (Stop to end)...")
         while not self._stop:
             sent += 1
             online, latency = await async_ping(self.host, timeout=self.timeout)
             if online:
                 received += 1
                 latencies.append(latency or 0.0)
+                self.sample.emit(latency)
                 if latency is not None:
                     self.line.emit(f"  reply from {self.host}: time={latency:.1f} ms")
                 else:
                     self.line.emit(f"  reply from {self.host}")
             else:
+                self.sample.emit(None)
                 self.line.emit(f"  request timed out ({sent})")
             if not self._stop:
                 await asyncio.sleep(self.interval)
@@ -66,13 +70,13 @@ class PingToolWorker(QThread):
 class PingToolWidget(QDialog):
     """Standalone ping tool opened from the Tools menu."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, initial_host: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Ping Tool")
-        self.setMinimumSize(520, 380)
+        self.setMinimumSize(560, 480)
         self._worker: PingToolWorker | None = None
 
-        self.host = QLineEdit()
+        self.host = QLineEdit(initial_host)
         self.host.setPlaceholderText("Target IP / hostname")
         self.host.returnPressed.connect(self._start)
 
@@ -82,6 +86,7 @@ class PingToolWidget(QDialog):
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self._stop)
 
+        self.sparkline = LatencySparkline()
         self.log = QTextEdit()
         self.log.setReadOnly(True)
 
@@ -93,7 +98,9 @@ class PingToolWidget(QDialog):
 
         layout = QVBoxLayout()
         layout.addLayout(tb)
-        layout.addWidget(self.log)
+        layout.addWidget(QLabel("Latency"))
+        layout.addWidget(self.sparkline)
+        layout.addWidget(self.log, 1)
         self.setLayout(layout)
 
     def _start(self):
@@ -108,8 +115,10 @@ class PingToolWidget(QDialog):
             self.log.append("Ping already running — press Stop first.")
             return
         self.log.clear()
+        self.sparkline.clear()
         self._worker = PingToolWorker(host)
         self._worker.line.connect(self.log.append)
+        self._worker.sample.connect(self.sparkline.add_sample)
         self._worker.finished_ok.connect(self._on_finished)
         self._worker.start()
         self.start_btn.setEnabled(False)

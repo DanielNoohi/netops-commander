@@ -7,8 +7,7 @@ from typing import Optional, Callable
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QLineEdit, QPushButton, QProgressBar, QMessageBox,
-    QMenu, QFileDialog, QInputDialog, QDialog,
-    QTextEdit,
+    QMenu, QFileDialog, QDialog, QTextEdit, QLabel,
 )
 from PySide6.QtCore import Qt, QThread, Signal
 
@@ -20,15 +19,16 @@ from ..core.scanner import (
     persist_device,
     reconcile_scan_results,
 )
-from ..core.discovery import async_ping, async_tcp_connect
+from ..core.discovery import async_tcp_connect
 from ..utils.export import export_csv, export_json, export_html
-from ..utils.validators import validate_cidr, validate_port_range
-from ..utils.network import get_local_subnet
+from ..utils.validators import validate_port_range
 from ..utils.ports import parse_open_ports, format_open_ports
 from ..utils.logger import get_logger
+from ..utils.launchers import open_http, open_rdp, open_ssh
 from ..config import get_config
 from ..constants import DEFAULT_PORTS, PORT_SCAN_MAX_PORTS
 from .device_dialog import DeviceDialog
+from .scan_dialog import ScanDialog
 
 log = get_logger(__name__)
 
@@ -74,60 +74,6 @@ class ScanThread(QThread):
     def cancel(self):
         if self._mgr:
             self._mgr.cancel()
-
-
-class PingWorker(QThread):
-    line = Signal(str)
-    finished_ok = Signal()
-
-    def __init__(self, host: str, count: int = 4, interval: float = 1.0):
-        super().__init__()
-        self.host = host
-        self.count = count
-        self.interval = interval
-        self._stop = False
-
-    def stop(self):
-        self._stop = True
-
-    def run(self):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(self._run(loop))
-        finally:
-            loop.close()
-            self.finished_ok.emit()
-
-    async def _run(self, loop):
-        sent = 0
-        received = 0
-        latencies = []
-        self.line.emit(f"Pinging {self.host} with {self.count} probes...")
-        for i in range(self.count):
-            if self._stop:
-                self.line.emit("Stopped by user.")
-                break
-            sent += 1
-            online, latency = await async_ping(self.host, timeout=2.0)
-            if online:
-                received += 1
-                latencies.append(latency or 0.0)
-                self.line.emit(
-                    f"  reply from {self.host}: time={latency:.1f} ms"
-                    if latency is not None
-                    else f"  reply from {self.host}"
-                )
-            else:
-                self.line.emit(f"  request timed out ({i + 1}/{self.count})")
-            if i + 1 < self.count and not self._stop:
-                await asyncio.sleep(self.interval)
-        loss = 100.0 * (sent - received) / sent if sent else 0.0
-        avg = (sum(latencies) / len(latencies)) if latencies else None
-        avg_s = f"{avg:.1f} ms" if avg is not None else "n/a"
-        self.line.emit(
-            f"Stats: sent={sent} recv={received} loss={loss:.0f}% avg={avg_s}"
-        )
 
 
 class PortScanWorker(QThread):
@@ -270,6 +216,14 @@ class DeviceTableWidget(QWidget):
         self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
 
+        self.empty_label = QLabel(
+            "No devices in inventory yet.\nClick Scan to discover hosts on your LAN."
+        )
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label.setStyleSheet("color: #9ca3af; font-size: 14px; padding: 24px;")
+        self.empty_label.setVisible(False)
+        layout.addWidget(self.empty_label)
+
     def reload_data(self):
         with session_scope() as session:
             devices = session.query(Device).order_by(Device.ip_address).all()
@@ -297,6 +251,9 @@ class DeviceTableWidget(QWidget):
     def _populate(self, devices):
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(devices))
+        empty = len(devices) == 0
+        self.table.setVisible(not empty)
+        self.empty_label.setVisible(empty)
         for row, d in enumerate(devices):
             ports_str = format_open_ports(d.get("open_ports"))
             vals = [
@@ -319,6 +276,12 @@ class DeviceTableWidget(QWidget):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if col == 0:
                     item.setData(Qt.ItemDataRole.UserRole, d["id"])
+                # Online column tint
+                if col == 5:
+                    from PySide6.QtGui import QColor
+                    item.setForeground(
+                        QColor("#22c55e") if d["online"] else QColor("#ef4444")
+                    )
                 self.table.setItem(row, col, item)
         self.table.setSortingEnabled(True)
 
@@ -335,21 +298,13 @@ class DeviceTableWidget(QWidget):
             self.table.setRowHidden(row, not visible)
 
     def start_scan_dialog(self):
-        cidr, ok = QInputDialog.getText(
-            self,
-            "Scan Network",
-            "CIDR (e.g. 192.168.1.0/24):",
-            text=get_local_subnet(),
-        )
-        if not ok or not cidr:
-            return
-        valid, msg = validate_cidr(cidr)
-        if not valid:
-            QMessageBox.warning(self, "Invalid CIDR", msg)
-            return
         if self._scan_thread and self._scan_thread.isRunning():
             QMessageBox.information(self, "Scan in progress", "A scan is already running.")
             return
+        dlg = ScanDialog(self)
+        if not dlg.exec() or not dlg.cidr:
+            return
+        cidr = dlg.cidr
         self._scan_thread = ScanThread(cidr)
         self._scan_thread.progress.connect(self._on_scan_progress)
         self._scan_thread.scan_finished.connect(self._scan_done)
@@ -358,6 +313,7 @@ class DeviceTableWidget(QWidget):
         self.btn_cancel.setEnabled(True)
         self.progress.setVisible(True)
         self.progress.setValue(0)
+        self.progress.setFormat(f"Scanning {cidr}…")
         self._scan_thread.start()
 
     def _on_scan_progress(self, ip: str, count: int, total: int):
@@ -424,6 +380,11 @@ class DeviceTableWidget(QWidget):
         trace_act = menu.addAction("Traceroute")
         tls_act = menu.addAction("TLS Check")
         wol_act = menu.addAction("Wake-on-LAN")
+        menu.addSeparator()
+        http_act = menu.addAction("Open HTTP")
+        https_act = menu.addAction("Open HTTPS")
+        rdp_act = menu.addAction("Remote Desktop (RDP)")
+        ssh_act = menu.addAction("SSH")
         action = menu.exec(self.table.viewport().mapToGlobal(pos))
         if action == monitor_act:
             self._toggle_monitor()
@@ -443,6 +404,14 @@ class DeviceTableWidget(QWidget):
             self._tls_selected()
         elif action == wol_act:
             self._wol_selected()
+        elif action == http_act:
+            self._launch("http")
+        elif action == https_act:
+            self._launch("https")
+        elif action == rdp_act:
+            self._launch("rdp")
+        elif action == ssh_act:
+            self._launch("ssh")
 
     def _selected_host_mac(self):
         ids = self._selected_device_ids()
@@ -529,22 +498,27 @@ class DeviceTableWidget(QWidget):
         self.reload_data()
         self.inventory_changed.emit()
 
-    def _ping_selected(self):
-        ids = self._selected_device_ids()
-        if not ids:
+    def _launch(self, kind: str):
+        host, _ = self._selected_host_mac()
+        if not host:
             return
-        with session_scope() as session:
-            dev = session.get(Device, ids[0])
-            if not dev:
-                return
-            host = dev.ip_address
-        dlg = ToolLogDialog(f"Ping — {host}", self)
-        worker = PingWorker(host, count=4)
-        worker.line.connect(dlg.append)
-        dlg.attach_worker(worker, worker.stop)
-        self._tool_workers.append(worker)
-        worker.start()
-        dlg.exec()
+        if kind == "http":
+            ok, msg = open_http(host, https=False)
+        elif kind == "https":
+            ok, msg = open_http(host, https=True)
+        elif kind == "rdp":
+            ok, msg = open_rdp(host)
+        else:
+            ok, msg = open_ssh(host)
+        if not ok:
+            QMessageBox.warning(self, "Launch", msg)
+
+    def _ping_selected(self):
+        host, _ = self._selected_host_mac()
+        if not host:
+            return
+        from .tools.ping_tool import PingToolWidget
+        PingToolWidget(self, initial_host=host).exec()
 
     def _portscan_selected(self):
         ids = self._selected_device_ids()

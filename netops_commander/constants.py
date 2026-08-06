@@ -1,7 +1,7 @@
 """Constants and enums for NetOps Commander."""
 
 APP_NAME = "NetOps Commander"
-APP_VERSION = "1.3.4"
+APP_VERSION = "1.4.0"
 ORG_NAME = "NetOps"
 ORG_DOMAIN = "netops.local"
 DEFAULT_THEME = "dark"
