@@ -1,190 +1,190 @@
 # NetOps Commander
 
-A desktop application for network inventory, monitoring, and diagnostics.
-Built with Python 3.11+, PySide6, SQLAlchemy, and async I/O.
-**Authorized use only** — never scan networks you do not own or have
-written permission to test.
+**Local network inventory, monitoring, and diagnostics** — a desktop toolkit for
+operators who need a clear picture of what’s on the LAN, without cloud accounts
+or agent sprawl.
 
-## Version 1.4.0 (Current)
+| | |
+|---|---|
+| **Version** | 1.4.0 |
+| **Stack** | Python 3.11+ · PySide6 · SQLAlchemy · asyncio |
+| **Platforms** | Windows · Linux · macOS |
+| **License** | GPL-3.0 |
 
-- **GUI**: scan dialog (estimate + local subnet), ping latency sparkline,
-  HTTP/RDP/SSH launchers, Wi‑Fi card, recent activity, empty-state inventory,
-  keyboard shortcuts, device dialog latency history
-- **Tests**: monitor alert edges, tools utils, network/wifi parsing, headless
-  GUI smoke (`QT_QPA_PLATFORM=offscreen`) in CI with PySide6
+> **Authorized use only.** Scan and probe only networks you own or have
+> written permission to test.
 
-## Version 1.3.4
+---
 
-- **Settings** dialog (File → Settings): theme, scan timeout/concurrency,
-  `require_arp`, monitor interval/max, history retention
-- History retention purge on startup; delete devices from inventory
-- Alert acknowledge + severity colors; HTML export escapes cell content
-- Unit tests for ARP/ghost rules, inventory reconcile, export escaping
+## Highlights
 
-## Version 1.3.3
+- **Strict discovery** — ICMP + ARP/L2 confirmation rejects ghost subnet replies
+  and proxy-ARP sinkholes (`require_arp`)
+- **Living inventory** — post-scan reconcile keeps the table aligned with what
+  was actually found; ghost rows purged on startup
+- **Opt-in monitoring** — edge-triggered offline / recovery / high-latency alerts
+- **Ops toolbox** — ping (live latency graph), DNS, traceroute, port scan,
+  subnet calc, TLS check, WOL, route/ARP, HTTP·RDP·SSH launchers
+- **Desktop UX** — dashboard (iface, Wi‑Fi, activity), settings, themes,
+  shortcuts, CSV/JSON/HTML export
+- **Solid engineering** — no `shell=True`, validated inputs, CI + unit +
+  headless GUI smoke tests
 
-- **Inventory cleanup**: purge ghost rows (no MAC) on startup; after a scan,
-  reconcile the CIDR so the table and dashboard match found hosts only
-  (not stale “254 online” from older buggy scans).
+---
 
-## Version 1.3.2
-
-- **Ghost-host filter**: require a real ARP MAC (not gateway proxy-ARP) before
-  marking a host online. Stops `/24` scans reporting 254 fake “online” devices
-  when the LAN answers ICMP/TCP for empty addresses.
-- Config: `app.require_arp: true` (default).
-
-## Version 1.3.1
-
-- **Scan fix**: reverse-DNS / NetBIOS timeouts no longer discard online hosts.
-- Stricter ICMP reply matching; modest Windows scan concurrency; ARP cache reuse.
-
-## Version 1.3.0
-
-- Full **Tools suite**: Ping, DNS, Traceroute, Subnet Calculator, TLS check,
-  Wake-on-LAN, Route/ARP viewers — toolbar + Tools menu + device context menu
-- Packaging: `pyproject.toml`, `python -m netops_commander`, `netops-commander` script
-- Broader unit tests (validators, subnet, WOL, config, ports, monitor stop)
-
-## Features
-
-### Network Discovery & Inventory
-- CIDR scan (ICMP / ARP / TCP fallback), strict online detection
-- Hostname, MAC + OUI vendor enrichment, device type classification
-- Sortable/searchable inventory; notes/tags (double-click or context menu)
-- Scan history recorded in SQLite
-
-### Dashboard
-- Interface / IP / subnet / gateway / DNS / public IP / Wi‑Fi
-- Online/offline/total/monitored counts and recent activity
-- Alerts feed (offline / recovery / high latency) with acknowledge
-- File → Settings; shortcuts: Ctrl+R scan, Ctrl+F search, F5 refresh
-
-### Monitoring
-- Opt-in per-device monitoring with clean start/stop
-- Edge-triggered high-latency alerts (no spam)
-
-### Tools
-| Tool | Where |
-|------|--------|
-| Continuous Ping | Tools / toolbar |
-| DNS (A/AAAA/PTR + MX/TXT/NS via nslookup) | Tools / context menu |
-| Traceroute | Tools / context menu |
-| TCP Port Scan | Context menu |
-| Subnet Calculator | Tools / toolbar |
-| TLS certificate check | Tools / context menu |
-| Wake-on-LAN | Tools / context menu |
-| Route + ARP tables | Tools menu |
-| HTTP / HTTPS / RDP / SSH launchers | Context menu / device dialog |
-| Live ping latency sparkline | Ping tool |
-| Dark/light theme | View / toolbar (persisted) |
-
-### Data
-- SQLite for devices, history, monitor results, alerts
-- Export CSV / JSON / HTML
-- Preferences in `config.yaml`
-
-### Planned
-- Multi-probe packet-loss alerts
-- Deep nmap/SNMP integration in the scan pipeline
-
-## Requirements
-
-- Python 3.11+ (3.12 recommended)
-- Windows 10/11, Linux, macOS
-- Admin/root recommended for some discovery features
-
-## Installation
+## Quick start
 
 ```bash
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Linux/macOS: source .venv/bin/activate
+# Windows:  .venv\Scripts\activate
+# Unix:     source .venv/bin/activate
+
 pip install -r requirements.txt
 python main.py
-# or: python -m netops_commander
+# or:  python -m netops_commander
+# or:  netops-commander   (after pip install -e .)
 ```
 
-Optional extras:
+Optional extras (nmap / scapy / pysnmp — not required for core scans):
 
 ```bash
 pip install -r requirements-optional.txt
-# or: pip install -e ".[optional]"
+# or:  pip install -e ".[optional]"
 ```
+
+Admin/root is recommended for full ICMP/ARP fidelity on some platforms.
+
+---
+
+## Everyday workflow
+
+| Step | Action |
+|------|--------|
+| 1 | **Scan** — toolbar or `Ctrl+R` → choose CIDR → Start |
+| 2 | **Inspect** — double-click a row (notes, tags, latency history, launchers) |
+| 3 | **Monitor** — right-click → Toggle Monitoring |
+| 4 | **Diagnose** — Ping / DNS / Trace / Ports / TLS / WOL from context menu |
+| 5 | **Export** — File → Export (CSV, JSON, HTML) |
+| 6 | **Tune** — File → Settings (`Ctrl+,`) or edit `config.yaml` |
+
+**Shortcuts:** `Ctrl+R` scan · `Ctrl+F` search · `F5` refresh · `Ctrl+,` settings · `Ctrl+E` export CSV
+
+---
+
+## Features
+
+### Discovery & inventory
+CIDR scan with ICMP, ARP confirmation, and TCP fallback; hostname / MAC / OUI
+vendor enrichment; device-type guess; searchable sortable table; notes & tags;
+SQLite-backed history.
+
+### Dashboard & monitoring
+Active interface, gateway, DNS, public IP, Wi‑Fi summary; online / offline /
+monitored counts; recent activity; acknowledgeable alerts.
+
+### Tools
+
+| Tool | Entry points |
+|------|----------------|
+| Continuous ping + latency sparkline | Toolbar · Tools · context |
+| DNS (A/AAAA/PTR; MX/TXT/NS via nslookup) | Tools · context |
+| Traceroute | Tools · context |
+| TCP port scan | Context |
+| Subnet calculator | Toolbar · Tools |
+| TLS certificate check | Tools · context |
+| Wake-on-LAN | Tools · context |
+| Route / ARP tables | Tools |
+| Open HTTP · HTTPS · RDP · SSH | Context · device dialog |
+
+### Data & config
+SQLite (`devices`, `scan_history`, `monitor_results`, `alerts`); preferences in
+`config.yaml` (theme, timeouts, concurrency, `require_arp`, retention).
+
+### Roadmap
+Multi-probe packet-loss alerts · deeper nmap/SNMP in the scan path.
+
+---
 
 ## Configuration
 
-Defaults in `config.yaml` (auto-created). Theme and other keys are updated via
-`ConfigManager.set()` at runtime. SQLite `settings` is used for schema versioning.
+`config.yaml` is created with defaults on first run. Notable keys under `app:`:
 
-## Usage
+| Key | Role |
+|-----|------|
+| `require_arp` | Require real ARP MAC before marking online (default `true`) |
+| `scan_concurrency` | Parallel hosts per scan wave |
+| `scan_timeout` | Per-host ping timeout (seconds) |
+| `monitoring_interval` | Seconds between monitor passes |
+| `history_retention_days` | Startup purge of old history (`0` = keep forever) |
+| `theme` | `dark` \| `light` |
 
-1. **Scan** — toolbar **Scan** or device-table Scan button → CIDR → Start  
-2. **Inspect** — double-click a row to edit notes/tags  
-3. **Monitor** — right-click → Toggle Monitoring  
-4. **Tools** — toolbar / Tools menu / device context menu  
-5. **Export** — File → Export  
+Runtime changes from **Settings** are persisted back to the file.
 
-## Security
+---
 
-- Authorized networks only  
-- Validated CIDR/IP/ports; rate-limited scans  
-- No `shell=True`; subprocess uses argument lists only  
+## Security posture
 
-## Project Structure
+- Authorized networks only — enforce this yourself
+- CIDR capped at `/16`; ports and hosts validated before tools run
+- Subprocess calls use argument lists only (never `shell=True`)
+- HTML export escapes cell content
+- No telemetry, no remote accounts — data stays in local SQLite
 
-See `PROJECT_STRUCTURE.md`.
+---
+
+## Development
+
+```bash
+# Unit + GUI smoke (headless)
+set QT_QPA_PLATFORM=offscreen          # Windows
+# export QT_QPA_PLATFORM=offscreen     # Unix
+
+python tests/test_gui_smoke.py
+python -m pyflakes main.py netops_commander tests
+```
+
+CI runs compile, the full test suite (including offscreen GUI smoke), version
+sync, and hard pyflakes on Python 3.11 and 3.12.
+
+Layout: see [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md).  
+Agent notes: see [`AGENTS.md`](AGENTS.md).
+
+---
 
 ## Changelog
 
-### 1.4.0 — GUI polish + test depth
-- Scan dialog, latency sparkline, launchers, Wi‑Fi + activity dashboard
-- Shortcuts; empty inventory state; device latency history
-- Broad unit suite + offscreen GUI smoke tests in CI
-- Version 1.3.4 → 1.4.0
+### 1.4.0
+Scan dialog, ping latency sparkline, HTTP/RDP/SSH launchers, Wi‑Fi + activity
+dashboard, shortcuts, empty inventory state, device latency history; broader
+unit suite and offscreen GUI smoke tests in CI.
 
-### 1.3.4 — Settings, retention, harden exports/tests
-- File → Settings for key scan/monitor preferences
-- Startup history retention; device delete; alert acknowledge UI
-- HTML export XSS-safe escaping; tests for discovery ARP + inventory
-- Version 1.3.3 → 1.3.4
+### 1.3.4
+Settings dialog; history retention; device delete; alert acknowledge + severity
+colors; HTML export escaping; ARP/inventory regression tests.
 
-### 1.3.3 — Inventory matches scan results
-- Startup purge of ghost ICMP inventory rows (no real MAC)
-- Post-scan reconcile deletes/marks offline CIDR hosts not found this pass
-- Version 1.3.2 → 1.3.3
+### 1.3.3
+Startup ghost purge; post-scan inventory reconcile so UI matches found hosts.
 
-### 1.3.2 — Reject ghost ICMP/TCP hosts
-- Online requires ARP/L2 confirmation (or local IP); proxy-ARP and “all ports
-  open” sinkholes are dropped
-- `require_arp` config flag (default true)
-- Version 1.3.1 → 1.3.2
+### 1.3.2
+Require ARP/L2 confirmation (`require_arp`) to reject ghost ICMP/TCP hosts.
 
-### 1.3.1 — Scan finds devices again
-- Hostname enrichment timeouts no longer abort `discover_host` after a successful ping
-- Ping success requires a real reply marker; Windows concurrency capped
-- Brief ARP table cache during scan waves
-- Version 1.3.0 → 1.3.1
+### 1.3.1
+Hostname enrichment timeouts no longer discard online hosts; tighter ICMP
+matching; Windows concurrency cap; ARP cache reuse.
 
-### 1.3.0 — Tools suite & packaging
-- Added DNS, Traceroute, Subnet Calculator, TLS check, WOL, Route/ARP tools
-- Main toolbar; richer device context menu
-- `pyproject.toml` + `netops_commander.app` entry points
-- Unit tests for validators, subnet, WOL
-- Version 1.2.1 → 1.3.0
+### 1.3.0
+Full tools suite, toolbar, `pyproject.toml` packaging, expanded unit tests.
 
-### 1.2.1 — Remaining bugfixes
-- Theme persistence, deps-thread retain, ScanHistory, edge-triggered latency alerts,
-  double-click edit, doc honesty, GPL named
+### 1.2.x
+Clean monitor stop, real Ping tool, theme persistence, docs honesty.
 
-### 1.2.0 — Monitoring stop & docs honesty
-- Clean monitor stop; real Ping Tool; requirements split; honest README
+### 1.1.x
+Strict discovery pipeline, OUI enrichment, scan cancel/progress fixes.
 
-### 1.1.x — Scan pipeline & discovery
-- Strict discovery, OUI enrichment, scan cancel/progress fixes
+---
 
 ## License
 
-**GNU GPL v3.0** — see `LICENSE`.
+**GNU GPL v3.0** — see [`LICENSE`](LICENSE).
 
-Authorized network administration use only.
+Built for people who run networks. Use it accordingly.
