@@ -1,6 +1,5 @@
 """Configuration management module."""
 
-import os
 import yaml
 from pathlib import Path
 from typing import Any, Dict

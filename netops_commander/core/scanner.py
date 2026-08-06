@@ -9,9 +9,7 @@ import json
 import ipaddress
 from dataclasses import asdict
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Callable, Awaitable, Optional, List, Dict, Any
-from concurrent.futures import ThreadPoolExecutor
+from typing import Callable, Optional, List
 
 from .discovery import discover_host, DiscoveredDevice
 from ..database.database import session_scope
@@ -111,6 +109,7 @@ async def background_scan(
     scan_mgr: CancellableScan,
     done_callback: Callable,
     error_callback: Callable,
+    progress_callback: Optional[Callable] = None,
 ) -> None:
     """
     Start background scan that updates state via callbacks.
@@ -120,9 +119,12 @@ async def background_scan(
         scan_mgr: CancellableScan instance to control lifecycle
         done_callback: Called with (devices_list) on completion
         error_callback: Called with (exception) on error
+        progress_callback: Optional Callable(ip, count, total)
     """
     try:
-        devices = await scan_cidr(cidr, scan_mgr=scan_mgr)
+        devices = await scan_cidr(
+            cidr, progress_callback=progress_callback, scan_mgr=scan_mgr
+        )
         done_callback(devices)
     except Exception as e:
         error_callback(e)
@@ -136,14 +138,18 @@ def persist_device(device: DiscoveredDevice) -> bool:
     Returns False if device is offline (not persisted).
 
     Handles both new devices and updates to existing ones.
-    Sets is_monitored=True by default, monitor_interval from config.
+    New devices default to is_monitored=False (opt-in monitoring).
     """
     if not device.online:
         return False
 
     now = datetime.now(timezone.utc)
     config = get_config()
-    default_monitor_interval = config.get("app.monitor_interval", 60)
+    # Support both key spellings used in config.yaml / defaults
+    default_monitor_interval = config.get(
+        "app.monitor_interval",
+        config.get("app.monitoring_interval", 60),
+    )
 
     with session_scope() as session:
         existing = session.query(DeviceModel).filter_by(ip_address=device.ip_address).first()
@@ -152,7 +158,7 @@ def persist_device(device: DiscoveredDevice) -> bool:
             existing.mac_address = device.mac_address
             existing.vendor = device.vendor
             existing.latency_ms = device.latency_ms
-            existing.open_ports = json.dumps(device.open_ports)
+            existing.open_ports = json.dumps(list(device.open_ports or []))
             existing.device_type = device.device_type
             existing.online = True
             existing.last_seen = now
@@ -168,10 +174,10 @@ def persist_device(device: DiscoveredDevice) -> bool:
                 device_type=device.device_type,
                 online=True,
                 latency_ms=device.latency_ms,
-                open_ports=json.dumps(device.open_ports),
+                open_ports=json.dumps(list(device.open_ports or [])),
                 first_seen=now,
                 last_seen=now,
-                is_monitored=True,
+                is_monitored=False,  # opt-in
                 monitor_interval=default_monitor_interval,
             )
             session.add(new_dev)
@@ -179,24 +185,35 @@ def persist_device(device: DiscoveredDevice) -> bool:
 
 
 def export_devices_csv(filename: str, devices: List[DiscoveredDevice]) -> None:
-    """Export devices to CSV file."""
+    """Export DiscoveredDevice list to CSV (in-memory scan results only).
+
+    Prefer utils.export for Device ORM rows from the GUI inventory.
+    """
     with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow([
             "ip_address", "hostname", "mac_address", "vendor", "device_type",
-            "online", "latency_ms", "open_ports", "notes", "tags", "first_seen", "last_seen"
+            "online", "latency_ms", "open_ports", "discovery_method", "last_seen",
         ])
         for d in devices:
+            ports = getattr(d, "open_ports", None) or []
+            last_seen = getattr(d, "last_seen", None)
             writer.writerow([
-                d.ip_address, d.hostname or "", d.mac_address or "", d.vendor or "",
-                d.device_type or "", d.online, d.latency_ms or "", "|".join(map(str, d.open_ports)),
-                d.notes or "", d.tags or "", d.first_seen.isoformat() if d.first_seen else "",
-                d.last_seen.isoformat() if d.last_seen else ""
+                d.ip_address,
+                d.hostname or "",
+                d.mac_address or "",
+                d.vendor or "",
+                d.device_type or "",
+                d.online,
+                d.latency_ms or "",
+                "|".join(map(str, ports)),
+                getattr(d, "discovery_method", "") or "",
+                last_seen.isoformat() if last_seen else "",
             ])
 
 
 def export_devices_json(filename: str, devices: List[DiscoveredDevice]) -> None:
-    """Export devices to JSON file."""
+    """Export DiscoveredDevice list to JSON (in-memory scan results only)."""
     data = [asdict(d) for d in devices]
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, default=str)

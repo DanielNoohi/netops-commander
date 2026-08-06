@@ -5,7 +5,6 @@ APP_VERSION = "1.1.1"
 ORG_NAME = "NetOps"
 ORG_DOMAIN = "netops.local"
 DEFAULT_THEME = "dark"
-DEFAULT_THEME = "dark"
 
 SUPPORTED_EXPORT_FORMATS = ("csv", "json", "html")
 

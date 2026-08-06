@@ -1,7 +1,7 @@
 """Device detail / edit dialog."""
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QLineEdit,
-    QTextEdit, QDialogButtonBox, QMessageBox
+    QTextEdit, QDialogButtonBox
 )
 
 from ..database.database import session_scope

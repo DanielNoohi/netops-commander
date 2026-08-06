@@ -1,6 +1,5 @@
 """Input validation helpers."""
 import ipaddress
-import re
 from ..constants import PORT_SCAN_MAX_PORTS, PORT_SCAN_MAX_TARGETS
 
 def validate_cidr(value: str) -> tuple:

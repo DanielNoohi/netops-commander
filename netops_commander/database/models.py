@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
-    String, Integer, Float, Boolean, DateTime, Text, ForeignKey, JSON, Index
+    String, Integer, Float, Boolean, DateTime, Text, ForeignKey, Index
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 

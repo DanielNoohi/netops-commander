@@ -10,10 +10,8 @@ Device discovery using:
 """
 
 import asyncio
-import json
 import platform
 import re
-import subprocess
 import socket
 from dataclasses import dataclass, field
 from datetime import datetime, timezone

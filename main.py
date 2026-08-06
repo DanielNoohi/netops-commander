@@ -6,10 +6,8 @@ NetOps Commander - Main entry point
 import sys
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QIcon
 
 from netops_commander import __version__
-from netops_commander.config import get_config
 from netops_commander.database.database import init_database
 from netops_commander.utils.logger import setup_logging
 from netops_commander.gui.main_window import MainWindow
@@ -20,9 +18,8 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("NetOps Commander")
     app.setApplicationVersion(__version__)
-    app.setWindowIcon(QIcon(":/icons/app.png"))  # Placeholder
 
-    # Initialize database
+    # Initialize database (create tables + run migrations)
     init_database()
 
     # Setup logging (RotatingFileHandler + stdout)
@@ -31,7 +28,7 @@ def main():
     import logging
     logging.info("Starting NetOps Commander v%s", __version__)
 
-    # Create and show main window
+    # Create and show main window (theme applied inside MainWindow)
     window = MainWindow()
     window.show()
 

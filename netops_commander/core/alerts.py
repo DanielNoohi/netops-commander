@@ -1,5 +1,4 @@
 """Alert definitions and severity helpers."""
-from ..constants import ALERT_TYPES
 
 
 def severity_for(alert_type: str) -> str:

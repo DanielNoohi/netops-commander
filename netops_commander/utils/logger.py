@@ -1,6 +1,5 @@
 """Logger setup."""
 import logging
-from pathlib import Path
 from ..config import get_config
 
 def get_logger(name: str) -> logging.Logger:

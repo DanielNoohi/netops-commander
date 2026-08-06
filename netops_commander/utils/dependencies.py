@@ -2,7 +2,6 @@
 import importlib
 import shutil
 import subprocess
-import sys
 from ..utils.logger import get_logger
 
 log = get_logger(__name__)

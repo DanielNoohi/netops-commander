@@ -66,9 +66,13 @@ def session_scope() -> Generator[Session, None, None]:
 
 
 def init_database() -> None:
-    """Initialize database - create all tables."""
+    """Initialize database - create all tables and run lightweight migrations."""
     engine = get_engine()
     Base.metadata.create_all(engine)
+    # Import here to avoid circular import at module load
+    from .migrations import run_migrations
+
+    run_migrations()
 
 
 def drop_database() -> None:
@@ -83,6 +87,11 @@ def get_session() -> Session:
 
 
 def vacuum_database() -> None:
-    """Vacuum the SQLite database to reclaim space."""
-    with session_scope() as session:
-        session.execute("VACUUM")
+    """Vacuum the SQLite database to reclaim space (SQLAlchemy 2.x safe)."""
+    from sqlalchemy import text
+
+    engine = get_engine()
+    # VACUUM cannot run inside a transaction on SQLite
+    with engine.connect() as conn:
+        conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+        conn.execute(text("VACUUM"))

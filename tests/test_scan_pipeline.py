@@ -5,7 +5,6 @@ v1.1.1 bug: asyncio.create_task fire-and-forget never executed).
 """
 import asyncio
 import sys
-from unittest.mock import patch
 from dataclasses import dataclass, field
 
 
