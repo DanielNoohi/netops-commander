@@ -3,7 +3,7 @@ NetOps Commander - Professional Network Administration Tool
 Authorized use only.
 """
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 __app_name__ = "NetOps Commander"
 
 from .constants import (
@@ -21,7 +21,6 @@ from .constants import (
     DEFAULT_PORT_SCAN_TIMEOUT,
     DEFAULT_MONITOR_INTERVAL,
     DEFAULT_MONITOR_MAX_DEVICES,
-    ICON_PATHS,
 )
 __all__ = [
     "APP_NAME",
@@ -38,5 +37,4 @@ __all__ = [
     "DEFAULT_PORT_SCAN_TIMEOUT",
     "DEFAULT_MONITOR_INTERVAL",
     "DEFAULT_MONITOR_MAX_DEVICES",
-    "ICON_PATHS",
 ]

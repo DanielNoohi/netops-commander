@@ -1,7 +1,7 @@
 """Constants and enums for NetOps Commander."""
 
 APP_NAME = "NetOps Commander"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 ORG_NAME = "NetOps"
 ORG_DOMAIN = "netops.local"
 DEFAULT_THEME = "dark"
@@ -36,13 +36,6 @@ DEFAULT_PORT_SCAN_TIMEOUT = 0.8
 DEFAULT_MONITOR_INTERVAL = 60
 DEFAULT_MONITOR_MAX_DEVICES = 25
 DEFAULT_HISTORY_RETENTION_DAYS = 30
-
-ICON_PATHS = {
-    "app": ":/icons/app.png",
-    "scan": ":/icons/scan.png",
-    "monitor": ":/icons/monitor.png",
-    "export": ":/icons/export.png",
-}
 
 # Timeouts (seconds)
 TCP_CONNECT_TIMEOUT = 1.0

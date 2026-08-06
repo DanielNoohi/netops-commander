@@ -28,6 +28,7 @@ class MonitorController:
         )
         self.devices: Dict[int, str] = {}
         self._task: Optional[asyncio.Task] = None
+        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
         self._prev_online: Dict[int, bool] = {}
         # Optional UI hook: alert_callback(severity, message, device_id?)
         self.alert_callback: Optional[Callable] = None
@@ -72,10 +73,39 @@ class MonitorController:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._loop())
 
-    def stop(self) -> None:
-        if self._task:
-            self._task.cancel()
+    def run_forever(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Run the monitor loop on ``loop`` until cancelled (blocking).
+
+        Used by ``MonitorThread`` which owns a dedicated event loop. The task
+        is stored on the controller so ``stop()`` (invoked from the GUI thread)
+        can cancel it scheduler-safely via ``loop.call_soon_threadsafe``.
+        """
+        self._event_loop = loop
+        self._task = loop.create_task(self._loop())
+        try:
+            loop.run_until_complete(self._task)
+        except asyncio.CancelledError:
+            pass
+        finally:
             self._task = None
+            self._event_loop = None
+
+    def stop(self) -> None:
+        """Stop the monitor loop.
+
+        Works whether driven via ``start()`` (same event loop) or via a
+        ``MonitorThread`` (separate loop in another thread): the active task
+        is cancelled scheduler-safe from whatever thread invokes this.
+        """
+        task = self._task
+        loop = self._event_loop
+        if task is not None and not task.done():
+            if loop is not None and loop.is_running():
+                loop.call_soon_threadsafe(task.cancel)
+            else:
+                task.cancel()
+        self._task = None
+        self._event_loop = None
 
     @property
     def running(self) -> bool:

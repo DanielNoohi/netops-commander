@@ -22,6 +22,17 @@ def validate_ip(value: str) -> tuple:
     except ValueError as e:
         return False, str(e)
 
+def is_valid_host(value: str) -> bool:
+    """Accept an IP address or a DNS hostname (letters/digits/./-)."""
+    value = value.strip()
+    if not value:
+        return False
+    if validate_ip(value)[0]:
+        return True
+    return 0 < len(value) <= 253 and all(
+        c.isalnum() or c in ".-_" for c in value
+    )
+
 def validate_port_range(spec: str) -> tuple:
     """Validate port range spec like '22,80,443' or '8000-8100'. Returns (ok, message, ports)."""
     ports = set()

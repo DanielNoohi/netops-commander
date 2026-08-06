@@ -22,6 +22,7 @@ from .. import __version__
 from .dashboard import DashboardWidget
 from .device_table import DeviceTableWidget
 from .themes import apply_theme
+from .tools.ping_tool import PingToolWidget
 
 log = get_logger(__name__)
 
@@ -52,11 +53,12 @@ class MonitorThread(QThread):
         asyncio.set_event_loop(loop)
         self._ctl.alert_callback = lambda sev, msg, did: self.alert.emit(sev, msg, did)
         try:
-            loop.run_until_complete(self._ctl._loop())
-        except asyncio.CancelledError:
-            pass
+            self._ctl.run_forever(loop)
         finally:
-            loop.close()
+            try:
+                loop.close()
+            except RuntimeError:
+                pass
 
 
 class MainWindow(QMainWindow):
@@ -107,6 +109,9 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self._theme_act)
 
         tools_menu = menu.addMenu("Tools")
+        ping_act = QAction("Ping Tool", self)
+        ping_act.triggered.connect(self._open_ping_tool)
+        tools_menu.addAction(ping_act)
         deps_action = QAction("Dependencies", self)
         deps_action.triggered.connect(self._show_dependencies)
         tools_menu.addAction(deps_action)
@@ -206,6 +211,11 @@ class MainWindow(QMainWindow):
         deps = self._deps or get_optional_dependencies()
         lines = [f"  {'✓' if v else '✗'} {k}" for k, v in deps.items()]
         QMessageBox.information(self, "Dependencies", "\n".join(lines))
+
+    def _open_ping_tool(self):
+        widget = PingToolWidget()
+        widget.setWindowModality(Qt.WindowModality.ApplicationModal)
+        widget.exec()
 
     def _show_about(self):
         QMessageBox.about(

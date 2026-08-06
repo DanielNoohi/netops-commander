@@ -1,0 +1,6 @@
+# NetOps Commander - optional dependencies (auto-detected, not required)
+# Enables deep port scanning (nmap), ARP discovery (scapy), SNMP interrogation (pysnmp).
+# Install with: pip install -r requirements-optional.txt
+python-nmap>=0.7.1
+scapy>=2.5.0
+pysnmp>=7.1.0

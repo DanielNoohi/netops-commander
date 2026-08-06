@@ -4,10 +4,8 @@ Provides scan scheduling, device persistence, and export functionality.
 """
 
 import asyncio
-import csv
-import json
 import ipaddress
-from dataclasses import asdict
+import json
 from datetime import datetime, timezone
 from typing import Callable, Optional, List
 
@@ -182,38 +180,3 @@ def persist_device(device: DiscoveredDevice) -> bool:
             )
             session.add(new_dev)
     return True
-
-
-def export_devices_csv(filename: str, devices: List[DiscoveredDevice]) -> None:
-    """Export DiscoveredDevice list to CSV (in-memory scan results only).
-
-    Prefer utils.export for Device ORM rows from the GUI inventory.
-    """
-    with open(filename, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "ip_address", "hostname", "mac_address", "vendor", "device_type",
-            "online", "latency_ms", "open_ports", "discovery_method", "last_seen",
-        ])
-        for d in devices:
-            ports = getattr(d, "open_ports", None) or []
-            last_seen = getattr(d, "last_seen", None)
-            writer.writerow([
-                d.ip_address,
-                d.hostname or "",
-                d.mac_address or "",
-                d.vendor or "",
-                d.device_type or "",
-                d.online,
-                d.latency_ms or "",
-                "|".join(map(str, ports)),
-                getattr(d, "discovery_method", "") or "",
-                last_seen.isoformat() if last_seen else "",
-            ])
-
-
-def export_devices_json(filename: str, devices: List[DiscoveredDevice]) -> None:
-    """Export DiscoveredDevice list to JSON (in-memory scan results only)."""
-    data = [asdict(d) for d in devices]
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, default=str)

@@ -44,6 +44,11 @@ jobs:
       - name: Run scan pipeline test
         run: python tests/test_scan_pipeline.py
 
+      - name: Run unit tests (ports, monitor stop)
+        run: |
+          python tests/test_ports.py
+          python tests/test_monitor_stop.py
+
       # Project convention (v1.1.1 bugfix): __version__ in __init__.py must match
       # APP_VERSION in constants.py so the GUI title bar and app metadata agree.
       - name: Verify version consistency
@@ -56,10 +61,6 @@ jobs:
           fi
           echo "Version consistent: $V1"
 
-      # ADVISORY (continue-on-error): the codebase currently has pre-existing
-      # findings - unused imports across several modules and F821 "undefined name
-      # 'engine'" in netops_commander/database/migrations.py. Flip this to a hard
-      # gate once those are cleaned up.
+      # Hard gate (as of 1.2.0): pyflakes must be clean.
       - name: pyflakes (unused imports / common issues)
-        continue-on-error: true
         run: python -m pyflakes main.py netops_commander tests
